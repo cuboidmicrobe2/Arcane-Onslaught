@@ -14,6 +14,8 @@ function update_menu()
 	local start_y = screen_height() * 0.42
 	local x = center_x(menu_width)
 
+	text("Arcane Onslaught", 72, 0, screen_height() * 0.20, screen_width(), 60)
+
 	if button("play", x, start_y, menu_width, button_height, "Play") then
 		start_game()
 	end

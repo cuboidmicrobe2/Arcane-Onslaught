@@ -27,6 +27,20 @@ inline int lua_button(lua_State *L)
     return 1;
 }
 
+inline int lua_text(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    const char *text = luaL_checkstring(L, 1);
+    int fontSize = static_cast<int>(luaL_checkinteger(L, 2));
+    float x = static_cast<float>(luaL_checknumber(L, 3));
+    float y = static_cast<float>(luaL_checknumber(L, 4));
+    float w = static_cast<float>(luaL_checknumber(L, 5));
+    float h = static_cast<float>(luaL_checknumber(L, 6));
+    bool drawn = api->Text(text, fontSize, x, y, w, h);
+    lua_pushboolean(L, drawn ? 1 : 0);
+    return 1;
+}
+
 inline int lua_start_game(lua_State *L)
 {
     GetEngineApi(L)->StartGame();
@@ -68,6 +82,10 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     lua_pushlightuserdata(L, &api);
     lua_pushcclosure(L, lua_button, 1);
     lua_setglobal(L, "button");
+
+    lua_pushlightuserdata(L, &api);
+    lua_pushcclosure(L, lua_text, 1);
+    lua_setglobal(L, "text");
 
     lua_pushlightuserdata(L, &api);
     lua_pushcclosure(L, lua_start_game, 1);

@@ -30,6 +30,13 @@ bool EngineAPI::Button(const std::string &id, float x, float y, float w, float h
     return pressed;
 }
 
+bool EngineAPI::Text(const std::string &text, int fontSize, float x, float y, float w, float h)
+{
+    int textWidth = MeasureText(text.c_str(), fontSize);
+    DrawText(text.c_str(), static_cast<int>(x + (w - textWidth) * 0.5f), static_cast<int>(y + (h - fontSize) * 0.5f), fontSize, RAYWHITE);
+    return true;
+}
+
 void EngineAPI::StartGame()
 {
     m_state.nextScene = SceneID::Game;

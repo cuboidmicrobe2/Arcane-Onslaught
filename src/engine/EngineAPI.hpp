@@ -27,6 +27,7 @@ public:
     void EndFrame();
 
     bool Button(const std::string &id, float x, float y, float w, float h, const std::string &text);
+    bool Text(const std::string &text, int fontSize, float x, float y, float w, float h);
 
     void StartGame();
     void OpenEditor();

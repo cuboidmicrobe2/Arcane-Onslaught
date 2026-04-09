@@ -23,48 +23,98 @@ int main()
     luaL_openlibs(L);
     registerEngineApi(L, api);
 
-    if (luaL_dofile(L, "scripts/main_menu.lua") != LUA_OK)
+    auto loadSceneScript = [L](SceneID scene) -> bool
     {
-        std::cerr << "Lua load error: " << lua_tostring(L, -1) << "\n";
-        lua_pop(L, 1);
+        const char *scriptPath = nullptr;
+        switch (scene)
+        {
+        case SceneID::MainMenu:
+            scriptPath = "scripts/main_menu.lua";
+            break;
+        case SceneID::Game:
+            scriptPath = "scripts/game.lua";
+            break;
+        case SceneID::Editor:
+            scriptPath = "scripts/editor.lua";
+            break;
+        case SceneID::Quit:
+            return true;
+        }
+
+        if (luaL_dofile(L, scriptPath) != LUA_OK)
+        {
+            std::cerr << "Lua load error (" << scriptPath << "): " << lua_tostring(L, -1) << "\n";
+            lua_pop(L, 1);
+            return false;
+        }
+
+        return true;
+    };
+
+    auto getUpdateFunctionName = [](SceneID scene) -> const char *
+    {
+        switch (scene)
+        {
+        case SceneID::MainMenu:
+            return "update_menu";
+        case SceneID::Game:
+            return "update_game";
+        case SceneID::Editor:
+            return "update_editor";
+        case SceneID::Quit:
+            return nullptr;
+        }
+
+        return nullptr;
+    };
+
+    SceneID activeScene = state.nextScene;
+    if (!loadSceneScript(activeScene))
+    {
+        state.shouldQuit = true;
     }
 
     while (!WindowShouldClose() && !state.shouldQuit)
     {
+        if (state.nextScene != activeScene)
+        {
+            activeScene = state.nextScene;
+            if (!loadSceneScript(activeScene))
+            {
+                state.shouldQuit = true;
+                continue;
+            }
+        }
+
         BeginDrawing();
         ClearBackground(Color{24, 24, 30, 255});
 
         api.BeginFrame();
 
-        lua_getglobal(L, "update_menu");
-        if (lua_isfunction(L, -1))
+        const char *updateFunction = getUpdateFunctionName(activeScene);
+        if (updateFunction != nullptr)
         {
-            if (lua_pcall(L, 0, 0, 0) != LUA_OK)
+            lua_getglobal(L, updateFunction);
+            if (lua_isfunction(L, -1))
             {
-                const char *err = lua_tostring(L, -1);
-                if (err != nullptr)
+                if (lua_pcall(L, 0, 0, 0) != LUA_OK)
                 {
-                    DrawText(err, 20, 20, 20, RED);
+                    const char *err = lua_tostring(L, -1);
+                    if (err != nullptr)
+                    {
+                        DrawText(err, 20, 20, 20, RED);
+                    }
+                    lua_pop(L, 1);
                 }
+            }
+            else
+            {
                 lua_pop(L, 1);
             }
-        }
-        else
-        {
-            lua_pop(L, 1);
         }
 
         api.EndFrame();
         EndDrawing();
-
-        if (state.nextScene == SceneID::Game)
-        {
-            // switch to game scene
-        }
-        else if (state.nextScene == SceneID::Editor)
-        {
-            // switch to editor scene
-        }
     }
 
     lua_close(L);
