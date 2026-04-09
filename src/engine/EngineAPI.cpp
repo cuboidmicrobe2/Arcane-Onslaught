@@ -1,4 +1,5 @@
 #include "engine/EngineAPI.hpp"
+#include "EngineAPI.hpp"
 
 EngineAPI::EngineAPI(EngineState &state) : m_state(state) {}
 
@@ -35,6 +36,11 @@ bool EngineAPI::Text(const std::string &text, int fontSize, float x, float y, fl
     int textWidth = MeasureText(text.c_str(), fontSize);
     DrawText(text.c_str(), static_cast<int>(x + (w - textWidth) * 0.5f), static_cast<int>(y + (h - fontSize) * 0.5f), fontSize, RAYWHITE);
     return true;
+}
+
+void EngineAPI::MainMenu()
+{
+    m_state.nextScene = SceneID::MainMenu;
 }
 
 void EngineAPI::StartGame()

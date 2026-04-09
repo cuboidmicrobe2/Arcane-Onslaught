@@ -41,6 +41,12 @@ inline int lua_text(lua_State *L)
     return 1;
 }
 
+inline int lua_main_menu(lua_State *L)
+{
+    GetEngineApi(L)->MainMenu();
+    return 0;
+}
+
 inline int lua_start_game(lua_State *L)
 {
     GetEngineApi(L)->StartGame();
@@ -86,6 +92,10 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     lua_pushlightuserdata(L, &api);
     lua_pushcclosure(L, lua_text, 1);
     lua_setglobal(L, "text");
+
+    lua_pushlightuserdata(L, &api);
+    lua_pushcclosure(L, lua_main_menu, 1);
+    lua_setglobal(L, "main_menu");
 
     lua_pushlightuserdata(L, &api);
     lua_pushcclosure(L, lua_start_game, 1);
