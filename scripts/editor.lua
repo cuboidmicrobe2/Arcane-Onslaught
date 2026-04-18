@@ -6,25 +6,45 @@ local editor_root = {
 	y = 50
 }
 
+local spell_sidebar_root = {
+	x = 250,
+	y = 240
+}
+
 local function editor_y(local_y)
 	return local_y + editor_root.y
 end
 
+local function spell_sidebar_x(local_x)
+	return spell_sidebar_root.x + local_x
+end
+
+local function spell_sidebar_y(local_y)
+	return editor_y(spell_sidebar_root.y + local_y)
+end
+
 local function draw_spell_slot_buttons()
-	local x = 26
-	local y = 122
+	local x = 0
+	local y = 48
 	local width = 250
 	local height = 46
 	local spacing = 12
 
-	engine.text(SpellConfig.slot_title, 26, x, editor_y(74), width, 28)
+	engine.text(SpellConfig.slot_title, 26, spell_sidebar_x(0), spell_sidebar_y(0), width, 28)
 
 	for i = 1, SpellConfig.slot_count do
 		local spell = SpellConfig.spells[i] or SpellConfig.get_active_spell()
 		local prefix = (i == SpellConfig.active_slot) and "> " or ""
 		local label = prefix .. tostring(i) .. ". " .. tostring(spell.name)
 
-		if engine.button("spell_slot_" .. tostring(i), x, editor_y(y + ((i - 1) * (height + spacing))), width, height, label) then
+		if engine.button(
+			"spell_slot_" .. tostring(i),
+			spell_sidebar_x(x),
+			spell_sidebar_y(y + ((i - 1) * (height + spacing))),
+			width,
+			height,
+			label
+		) then
 			if SpellConfig.active_slot ~= i then
 				SpellConfig.set_active_slot(i)
 				SpellConfig.save_to_file()
