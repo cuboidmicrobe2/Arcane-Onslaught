@@ -8,7 +8,17 @@ local DEFAULTS = {
 }
 
 SpellConfig.save_path = "scripts/spell_saved.lua"
-SpellConfig.slot_count = 5
+
+local function parse_slot_count_from_text(text)
+    local n = tonumber(tostring(text or ""):match("(%d+)"))
+    if not n then
+        return 5
+    end
+    return math.max(1, math.min(9, math.floor(n + 0.5)))
+end
+
+SpellConfig.slot_title = SpellConfig.slot_title or "Spell Slots: 5"
+SpellConfig.slot_count = SpellConfig.slot_count or parse_slot_count_from_text(SpellConfig.slot_title)
 SpellConfig.active_slot = SpellConfig.active_slot or 1
 
 local function default_spell_name(slot)
@@ -26,13 +36,27 @@ local function new_spell(slot)
     }
 end
 
-SpellConfig.spells = SpellConfig.spells or {
-    new_spell(1),
-    new_spell(2),
-    new_spell(3),
-    new_spell(4),
-    new_spell(5)
-}
+local function ensure_spell_slots()
+    SpellConfig.spells = SpellConfig.spells or {}
+    for i = 1, SpellConfig.slot_count do
+        if not SpellConfig.spells[i] then
+            SpellConfig.spells[i] = new_spell(i)
+        end
+    end
+end
+
+function SpellConfig.set_slot_title(text)
+    SpellConfig.slot_title = tostring(text or "Spell Slots: 5")
+    SpellConfig.slot_count = parse_slot_count_from_text(SpellConfig.slot_title)
+    ensure_spell_slots()
+    SpellConfig.set_active_slot(SpellConfig.active_slot)
+end
+
+function SpellConfig.get_slot_range_hint()
+    return "1-" .. tostring(SpellConfig.slot_count)
+end
+
+ensure_spell_slots()
 
 local function clamp_spell(spell, slot)
     local name = tostring(spell.name or "")
@@ -109,6 +133,8 @@ function SpellConfig.recalculate_damage(spell)
 end
 
 function SpellConfig.load_from_file()
+    ensure_spell_slots()
+
     local chunk = loadfile(SpellConfig.save_path)
     if not chunk then
         SpellConfig.recalculate_damage()
@@ -160,6 +186,8 @@ function SpellConfig.load_from_file()
 end
 
 function SpellConfig.save_to_file()
+    ensure_spell_slots()
+
     local file = io.open(SpellConfig.save_path, "w")
     if not file then
         return false

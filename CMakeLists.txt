@@ -15,12 +15,14 @@ FetchContent_MakeAvailable(entt)
 
 add_executable(ArcaneOnslaught
     src/main.cpp
+    src/AppRuntime.cpp
     src/engine/EngineAPI.cpp
     src/engine/GameEcs.cpp
 )
 
 target_include_directories(ArcaneOnslaught PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    C:/vcpkg/installed/x64-windows/include
 )
 
 target_compile_features(ArcaneOnslaught PRIVATE cxx_std_17)

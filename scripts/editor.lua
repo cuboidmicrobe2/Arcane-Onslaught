@@ -2,6 +2,14 @@ local intro_timer = 0.0
 dofile("scripts/ui_common.lua")
 dofile("scripts/spell_config.lua")
 
+local editor_root = {
+	y = 50
+}
+
+local function editor_y(local_y)
+	return local_y + editor_root.y
+end
+
 local function draw_spell_slot_buttons()
 	local x = 26
 	local y = 122
@@ -9,14 +17,14 @@ local function draw_spell_slot_buttons()
 	local height = 46
 	local spacing = 12
 
-	engine.text("Spell Slots", 26, x, 74, width, 28)
+	engine.text(SpellConfig.slot_title, 26, x, editor_y(74), width, 28)
 
 	for i = 1, SpellConfig.slot_count do
 		local spell = SpellConfig.spells[i] or SpellConfig.get_active_spell()
 		local prefix = (i == SpellConfig.active_slot) and "> " or ""
 		local label = prefix .. tostring(i) .. ". " .. tostring(spell.name)
 
-		if engine.button("spell_slot_" .. tostring(i), x, y + ((i - 1) * (height + spacing)), width, height, label) then
+		if engine.button("spell_slot_" .. tostring(i), x, editor_y(y + ((i - 1) * (height + spacing))), width, height, label) then
 			if SpellConfig.active_slot ~= i then
 				SpellConfig.set_active_slot(i)
 				SpellConfig.save_to_file()
@@ -35,24 +43,34 @@ local function draw_spell_editor()
 
 	local panel_width = 520
 	local panel_x = (engine.screen_width() - panel_width) * 0.5
-	local name_y = 108
-	local top_y = 188
 	local slider_width = 360
+	local controls_x = (engine.screen_width() - slider_width) * 0.5
+	local name_y = 150
+	local top_y = 188
 
-	engine.text("Spell Editor", 44, 0, 28, engine.screen_width(), 50)
-	engine.text("Active Slot: " .. tostring(SpellConfig.active_slot) .. " (1-5, LB/RB)", 20, 0, 72, engine.screen_width(), 24)
+	engine.text("Spell Editor", 44, 0, editor_y(25), engine.screen_width(), 50)
+	
+	engine.text(
+				"Active Slot: " .. tostring(SpellConfig.active_slot) .. " (" .. SpellConfig.get_slot_range_hint() .. ", LB/RB)",
+				20,
+				0,
+				editor_y(75),
+				engine.screen_width(),
+				24
+			)
+
 	spell.name = engine.text_field(
 		"spell_name_" .. tostring(SpellConfig.active_slot),
 		spell.name,
 		24,
-		panel_x,
-		name_y,
+		controls_x,
+		editor_y(name_y),
 		slider_width,
 		42,
 		"Spell Name"
 	)
 
-	local row = 0
+	local row = 1
 	local row_step = 82
 
 	spell.projectile_count = math.floor(engine.slider(
@@ -60,8 +78,8 @@ local function draw_spell_editor()
 		spell.projectile_count,
 		1,
 		12,
-		panel_x,
-		top_y + (row * row_step),
+		controls_x,
+		editor_y(top_y + (row * row_step)),
 		slider_width,
 		"Projectile Count"
 	) + 0.5)
@@ -72,8 +90,8 @@ local function draw_spell_editor()
 		spell.projectile_speed,
 		120,
 		900,
-		panel_x,
-		top_y + (row * row_step),
+		controls_x,
+		editor_y(top_y + (row * row_step)),
 		slider_width,
 		"Projectile Speed"
 	) + 0.5)
@@ -84,8 +102,8 @@ local function draw_spell_editor()
 		spell.projectile_size,
 		4,
 		36,
-		panel_x,
-		top_y + (row * row_step),
+		controls_x,
+		editor_y(top_y + (row * row_step)),
 		slider_width,
 		"Projectile Size"
 	) + 0.5)
@@ -94,8 +112,8 @@ local function draw_spell_editor()
 	spell.ricochet = engine.checkbox(
 		"spell_ricochet",
 		spell.ricochet,
-		panel_x,
-		top_y + (row * row_step),
+		controls_x,
+		editor_y(top_y + (row * row_step)),
 		28,
 		"Ricochet"
 	)
@@ -112,16 +130,16 @@ local function draw_spell_editor()
 
 	local ricochet_label = spell.ricochet and "Ricochet: Enabled" or "Ricochet: Disabled"
 	local summary_y = top_y + ((row + 1) * row_step) + 10
-	engine.text(ricochet_label, 20, panel_x, summary_y, panel_width, 24)
-	engine.text("Calculated Damage: " .. tostring(spell.damage), 30, panel_x, summary_y + 34, panel_width, 30)
+
+	engine.text("Calculated Damage: " .. tostring(spell.damage), 30, panel_x, editor_y(summary_y + 34), panel_width, 30)
 end
 
 local function return_button()
 	local layout = UI.get_default_menu_layout()
 
-	local start_y = engine.screen_height() * 0.83
+	local start_y = engine.screen_height() * 0.80
 
-	UI.render_menu_button("return", "Return", start_y, 0, layout, engine.main_menu)
+	UI.render_menu_button("return", "Return", editor_y(start_y), 0, layout, engine.main_menu)
 end
 
 function update_editor()
