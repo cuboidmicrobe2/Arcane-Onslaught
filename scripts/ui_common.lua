@@ -1,7 +1,7 @@
 UI = UI or {}
 
 function UI.get_centered_x(width)
-    return (screen_width() - width) * 0.5
+    return (engine.screen_width() - width) * 0.5
 end
 
 function UI.get_default_menu_layout()
@@ -20,7 +20,7 @@ function UI.render_menu_button(id, label, start_y, index, layout, on_click)
     local x = UI.get_centered_x(layout.width)
     local y = UI.get_menu_button_y(start_y, index, layout)
 
-    if button(id, x, y, layout.width, layout.button_height, label) then
+    if engine.button(id, x, y, layout.width, layout.button_height, label) then
         on_click()
         return true
     end

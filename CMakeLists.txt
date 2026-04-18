@@ -16,6 +16,7 @@ FetchContent_MakeAvailable(entt)
 add_executable(ArcaneOnslaught
     src/main.cpp
     src/engine/EngineAPI.cpp
+    src/engine/GameEcs.cpp
 )
 
 target_include_directories(ArcaneOnslaught PRIVATE

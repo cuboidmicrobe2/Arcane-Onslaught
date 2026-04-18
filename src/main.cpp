@@ -23,6 +23,12 @@ int main()
     luaL_openlibs(L);
     registerEngineApi(L, api);
 
+    if (luaL_dofile(L, "scripts/spell_config.lua") != LUA_OK)
+    {
+        std::cerr << "Lua load error (scripts/spell_config.lua): " << lua_tostring(L, -1) << "\n";
+        lua_pop(L, 1);
+    }
+
     auto loadSceneScript = [L](SceneID scene) -> bool
     {
         const char *scriptPath = nullptr;
@@ -73,6 +79,10 @@ int main()
     {
         state.shouldQuit = true;
     }
+    else
+    {
+        api.OnSceneChanged(activeScene);
+    }
 
     while (!WindowShouldClose() && !state.shouldQuit)
     {
@@ -84,6 +94,8 @@ int main()
                 state.shouldQuit = true;
                 continue;
             }
+
+            api.OnSceneChanged(activeScene);
         }
 
         BeginDrawing();
