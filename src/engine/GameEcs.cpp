@@ -1,5 +1,12 @@
 #include "engine/GameEcs.hpp"
 
+extern "C"
+{
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+}
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -7,20 +14,6 @@
 
 namespace
 {
-    struct ProjectileTag
-    {
-    };
-
-    struct ProjectileDamage
-    {
-        int value = 1;
-    };
-
-    struct ProjectileRicochet
-    {
-        int bouncesLeft = 0;
-    };
-
     struct FireCooldown
     {
         float seconds = 0.0f;
@@ -48,15 +41,161 @@ namespace
         return Vector2{(v.x * c) - (v.y * s), (v.x * s) + (v.y * c)};
     }
 
-    void SpawnSingleProjectile(entt::registry &registry, Vector2 pos, Vector2 direction, const GameEcs::SpellTuning &tuning)
+    bool ReadVector2Field(lua_State *L, int index, Vector2 &value)
     {
-        const entt::entity projectile = registry.create();
-        registry.emplace<ProjectileTag>(projectile);
-        registry.emplace<GameEcs::Position>(projectile, pos);
-        registry.emplace<GameEcs::Velocity>(projectile, Vector2{direction.x * tuning.projectileSpeed, direction.y * tuning.projectileSpeed});
-        registry.emplace<GameEcs::CircleCollider>(projectile, tuning.projectileSize);
-        registry.emplace<ProjectileDamage>(projectile, std::max(1, tuning.damage));
-        registry.emplace<ProjectileRicochet>(projectile, tuning.ricochet ? 3 : 0);
+        const int tableIndex = lua_absindex(L, index);
+        if (!lua_istable(L, tableIndex))
+        {
+            return false;
+        }
+
+        lua_getfield(L, tableIndex, "x");
+        lua_getfield(L, tableIndex, "y");
+        const bool hasX = lua_isnumber(L, -2) != 0;
+        const bool hasY = lua_isnumber(L, -1) != 0;
+        if (hasX && hasY)
+        {
+            value.x = static_cast<float>(lua_tonumber(L, -2));
+            value.y = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 2);
+            return true;
+        }
+
+        lua_pop(L, 2);
+        return false;
+    }
+
+    bool ReadFloatField(lua_State *L, int index, const char *field, float &value)
+    {
+        lua_getfield(L, index, field);
+        const bool ok = lua_isnumber(L, -1) != 0;
+        if (ok)
+        {
+            value = static_cast<float>(lua_tonumber(L, -1));
+        }
+        lua_pop(L, 1);
+        return ok;
+    }
+
+    bool ReadIntField(lua_State *L, int index, const char *field, int &value)
+    {
+        lua_getfield(L, index, field);
+        const bool ok = lua_isnumber(L, -1) != 0;
+        if (ok)
+        {
+            value = static_cast<int>(lua_tointeger(L, -1));
+        }
+        lua_pop(L, 1);
+        return ok;
+    }
+
+    bool ReadBoolField(lua_State *L, int index, const char *field, bool &value)
+    {
+        lua_getfield(L, index, field);
+        const bool ok = lua_isboolean(L, -1) != 0;
+        if (ok)
+        {
+            value = lua_toboolean(L, -1) != 0;
+        }
+        lua_pop(L, 1);
+        return ok;
+    }
+
+    bool ImportEntityFromTable(entt::registry &registry, lua_State *L, int entityIndex)
+    {
+        const int tableIndex = lua_absindex(L, entityIndex);
+        if (!lua_istable(L, tableIndex))
+        {
+            return false;
+        }
+
+        const entt::entity entity = registry.create();
+
+        Vector2 position{};
+        if (lua_getfield(L, tableIndex, "position") == LUA_TTABLE)
+        {
+            if (ReadVector2Field(L, -1, position))
+            {
+                registry.emplace<GameEcs::Position>(entity, position);
+            }
+        }
+        lua_pop(L, 1);
+
+        Vector2 velocity{};
+        if (lua_getfield(L, tableIndex, "velocity") == LUA_TTABLE)
+        {
+            if (ReadVector2Field(L, -1, velocity))
+            {
+                registry.emplace<GameEcs::Velocity>(entity, velocity);
+            }
+        }
+        lua_pop(L, 1);
+
+        float radius = 0.0f;
+        if (lua_getfield(L, tableIndex, "circle_collider") == LUA_TTABLE)
+        {
+            if (ReadFloatField(L, -1, "radius", radius))
+            {
+                registry.emplace<GameEcs::CircleCollider>(entity, radius);
+            }
+        }
+        lua_pop(L, 1);
+
+        int hp = 0;
+        if (lua_getfield(L, tableIndex, "health") == LUA_TTABLE)
+        {
+            if (ReadIntField(L, -1, "hp", hp))
+            {
+                registry.emplace<GameEcs::Health>(entity, hp);
+            }
+        }
+        lua_pop(L, 1);
+
+        float cooldownSeconds = 0.0f;
+        if (lua_getfield(L, tableIndex, "damage_cooldown") == LUA_TTABLE)
+        {
+            if (ReadFloatField(L, -1, "seconds", cooldownSeconds))
+            {
+                registry.emplace<GameEcs::DamageCooldown>(entity, cooldownSeconds);
+            }
+        }
+        lua_pop(L, 1);
+
+        bool flag = false;
+        if (ReadBoolField(L, tableIndex, "player_tag", flag) && flag)
+        {
+            registry.emplace<GameEcs::PlayerTag>(entity);
+        }
+        if (ReadBoolField(L, tableIndex, "enemy_tag", flag) && flag)
+        {
+            registry.emplace<GameEcs::EnemyTag>(entity);
+        }
+        if (ReadBoolField(L, tableIndex, "projectile_tag", flag) && flag)
+        {
+            registry.emplace<GameEcs::ProjectileTag>(entity);
+        }
+
+        int damage = 0;
+        if (lua_getfield(L, tableIndex, "projectile_damage") == LUA_TTABLE)
+        {
+            if (ReadIntField(L, -1, "value", damage))
+            {
+                registry.emplace<GameEcs::ProjectileDamage>(entity, damage);
+            }
+        }
+        lua_pop(L, 1);
+
+        int bounces = 0;
+        if (lua_getfield(L, tableIndex, "projectile_ricochet") == LUA_TTABLE)
+        {
+            if (ReadIntField(L, -1, "bounces_left", bounces))
+            {
+                registry.emplace<GameEcs::ProjectileRicochet>(entity, bounces);
+            }
+        }
+        lua_pop(L, 1);
+
+        return true;
     }
 } // namespace
 
@@ -125,39 +264,51 @@ namespace GameEcs
 
             return false;
         }
+
+        void SpawnProjectileEntity(entt::registry &registry, Vector2 pos, Vector2 direction, const SpellTuning &tuning)
+        {
+            const entt::entity projectile = registry.create();
+            registry.emplace<ProjectileTag>(projectile);
+            registry.emplace<Position>(projectile, pos);
+            registry.emplace<Velocity>(projectile, Vector2{direction.x * tuning.projectileSpeed, direction.y * tuning.projectileSpeed});
+            registry.emplace<CircleCollider>(projectile, tuning.projectileSize);
+            registry.emplace<ProjectileDamage>(projectile, std::max(1, tuning.damage));
+            registry.emplace<ProjectileRicochet>(projectile, tuning.ricochet ? 3 : 0);
+        }
     } // namespace
 
-    void InitializeWorld(entt::registry &registry, float width, float height)
+    bool InitializeWorld(entt::registry &registry, lua_State *L)
     {
+        if (L == nullptr || !lua_istable(L, -1))
+        {
+            return false;
+        }
+
         registry.clear();
         registry.ctx().insert_or_assign<SpellTuning>(SpellTuning{});
         registry.ctx().insert_or_assign<FireCooldown>(FireCooldown{});
 
-        const entt::entity player = registry.create();
-        registry.emplace<PlayerTag>(player);
-        registry.emplace<Position>(player, Vector2{width * 0.5f, height * 0.72f});
-        registry.emplace<Velocity>(player, Vector2{0.0f, 0.0f});
-        registry.emplace<CircleCollider>(player, 20.0f);
-        registry.emplace<Health>(player, 5);
-        registry.emplace<DamageCooldown>(player, 0.0f);
+        lua_getfield(L, -1, "ecs");
+        if (lua_istable(L, -1))
+        {
+            const int ecsIndex = lua_absindex(L, -1);
+            lua_getfield(L, ecsIndex, "entities");
+            if (lua_istable(L, -1))
+            {
+                const int entitiesIndex = lua_absindex(L, -1);
+                const int entityCount = static_cast<int>(lua_rawlen(L, -1));
+                for (int i = 1; i <= entityCount; ++i)
+                {
+                    lua_rawgeti(L, entitiesIndex, i);
+                    ImportEntityFromTable(registry, L, -1);
+                    lua_pop(L, 1);
+                }
+            }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
 
-        const entt::entity enemy = registry.create();
-        registry.emplace<EnemyTag>(enemy);
-        registry.emplace<Position>(enemy, Vector2{width * 0.5f, height * 0.2f});
-        registry.emplace<Velocity>(enemy, Vector2{120.0f, 0.0f});
-        registry.emplace<CircleCollider>(enemy, 16.0f);
-
-        const entt::entity enemyB = registry.create();
-        registry.emplace<EnemyTag>(enemyB);
-        registry.emplace<Position>(enemyB, Vector2{width * 0.25f, height * 0.32f});
-        registry.emplace<Velocity>(enemyB, Vector2{95.0f, 0.0f});
-        registry.emplace<CircleCollider>(enemyB, 14.0f);
-
-        const entt::entity enemyC = registry.create();
-        registry.emplace<EnemyTag>(enemyC);
-        registry.emplace<Position>(enemyC, Vector2{width * 0.75f, height * 0.27f});
-        registry.emplace<Velocity>(enemyC, Vector2{-110.0f, 0.0f});
-        registry.emplace<CircleCollider>(enemyC, 18.0f);
+        return true;
     }
 
     void SetSpellTuning(entt::registry &registry, const SpellTuning &tuning)
@@ -234,7 +385,7 @@ namespace GameEcs
                 Vector2 spawnPos = Vector2{
                     playerPos.value.x + (dir.x * (playerCol.radius + tuning.projectileSize + 2.0f)),
                     playerPos.value.y + (dir.y * (playerCol.radius + tuning.projectileSize + 2.0f))};
-                SpawnSingleProjectile(registry, spawnPos, dir, tuning);
+                SpawnProjectileEntity(registry, spawnPos, dir, tuning);
             }
 
             cooldown.seconds = kMaxPlayerFireRate;
@@ -346,7 +497,6 @@ namespace GameEcs
 
             if (hitSomething && ricochet.bouncesLeft > 0)
             {
-                // Slight turn to avoid immediately re-hitting the destroyed enemy location.
                 auto *vel = registry.try_get<Velocity>(projectile);
                 if (vel != nullptr)
                 {

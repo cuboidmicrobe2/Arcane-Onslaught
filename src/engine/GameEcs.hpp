@@ -1,7 +1,10 @@
 #pragma once
 
+#include <string>
 #include <entt/entt.hpp>
 #include <raylib.h>
+
+struct lua_State;
 
 namespace GameEcs
 {
@@ -47,6 +50,20 @@ namespace GameEcs
         float seconds = 0.0f;
     };
 
+    struct ProjectileTag
+    {
+    };
+
+    struct ProjectileDamage
+    {
+        int value = 1;
+    };
+
+    struct ProjectileRicochet
+    {
+        int bouncesLeft = 0;
+    };
+
     struct FrameContext
     {
         float dt = 0.0f;
@@ -54,7 +71,7 @@ namespace GameEcs
         float height = 0.0f;
     };
 
-    void InitializeWorld(entt::registry &registry, float width, float height);
+    bool InitializeWorld(entt::registry &registry, lua_State *L);
     void SetSpellTuning(entt::registry &registry, const SpellTuning &tuning);
     void UpdatePlayers(entt::registry &registry, const FrameContext &frame);
     void SpawnPlayerProjectiles(entt::registry &registry, const FrameContext &frame);

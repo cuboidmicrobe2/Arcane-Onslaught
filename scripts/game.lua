@@ -1,5 +1,6 @@
 dofile("scripts/ui_common.lua")
 dofile("scripts/spell_config.lua")
+local GameScene = dofile("scripts/game_scene.lua")
 
 function update_game()
     if SpellConfig.handle_slot_input() then
@@ -27,3 +28,5 @@ function update_game()
 
     engine.text(spell.name, 24, 0, engine.screen_height() - 34, engine.screen_width(), 24)
 end
+
+return GameScene

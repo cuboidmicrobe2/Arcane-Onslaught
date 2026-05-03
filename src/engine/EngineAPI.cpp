@@ -233,24 +233,36 @@ void EngineAPI::Quit()
 
 void EngineAPI::OnSceneChanged(SceneID scene)
 {
-    if (scene == SceneID::Game)
+    if (scene != SceneID::Game)
     {
-        InitializeGameEcs();
+        m_gameInitialized = false;
     }
 }
 
-void EngineAPI::InitializeGameEcs()
+void EngineAPI::ResetGameEcs()
 {
-    GameEcs::InitializeWorld(m_registry, ScreenWidth(), ScreenHeight());
+    m_registry.clear();
+    m_gameInitialized = false;
+}
+
+bool EngineAPI::LoadGameSceneFromLua(lua_State *L)
+{
+    ResetGameEcs();
+
+    if (!GameEcs::InitializeWorld(m_registry, L))
+    {
+        return false;
+    }
 
     m_gameInitialized = true;
+    return true;
 }
 
 void EngineAPI::RunGameFrame()
 {
     if (!m_gameInitialized)
     {
-        InitializeGameEcs();
+        return;
     }
 
     const GameEcs::FrameContext frame{DeltaTime(), ScreenWidth(), ScreenHeight()};
@@ -363,4 +375,14 @@ float EngineAPI::ScreenHeight() const
 float EngineAPI::DeltaTime() const
 {
     return GetFrameTime();
+}
+
+entt::registry &EngineAPI::Registry()
+{
+    return m_registry;
+}
+
+const entt::registry &EngineAPI::Registry() const
+{
+    return m_registry;
 }

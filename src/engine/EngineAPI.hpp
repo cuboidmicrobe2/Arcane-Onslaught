@@ -100,6 +100,11 @@ public:
     /// @param scene The destination scene that was selected.
     void OnSceneChanged(SceneID scene);
 
+    /// @brief Loads the gameplay ECS from the active Lua scene table.
+    /// @param L Lua state that currently has the scene table on top of the stack.
+    /// @return True when import succeeds.
+    bool LoadGameSceneFromLua(struct lua_State *L);
+
     /// @brief Executes one gameplay frame update and render pass.
     void RunGameFrame();
 
@@ -132,8 +137,12 @@ public:
     /// @brief Returns frame delta time in seconds.
     float DeltaTime() const;
 
+    /// @brief Returns the active gameplay registry for entity/component composition.
+    entt::registry &Registry();
+    const entt::registry &Registry() const;
+
 private:
-    void InitializeGameEcs();
+    void ResetGameEcs();
 
     EngineState &m_state;
     entt::registry m_registry;

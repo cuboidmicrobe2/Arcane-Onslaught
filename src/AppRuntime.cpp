@@ -134,13 +134,35 @@ void AppRuntime::Shutdown()
 
 bool AppRuntime::LoadSceneScript(SceneID scene)
 {
+    const int stackTop = lua_gettop(m_lua);
     const char *scriptPath = GetSceneScriptPath(scene);
     if (scriptPath == nullptr)
     {
         return scene == SceneID::Quit;
     }
 
-    return RunLuaFile(m_lua, scriptPath);
+    if (!RunLuaFile(m_lua, scriptPath))
+    {
+        lua_settop(m_lua, stackTop);
+        return false;
+    }
+
+    bool loaded = true;
+    if (scene == SceneID::Game)
+    {
+        if (!lua_istable(m_lua, -1))
+        {
+            std::cerr << "Lua scene did not return a game ECS table\n";
+            loaded = false;
+        }
+        else
+        {
+            loaded = m_api.LoadGameSceneFromLua(m_lua);
+        }
+    }
+
+    lua_settop(m_lua, stackTop);
+    return loaded;
 }
 
 void AppRuntime::HandlePendingSceneTransition()

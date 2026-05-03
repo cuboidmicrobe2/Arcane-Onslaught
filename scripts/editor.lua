@@ -1,6 +1,7 @@
 local intro_timer = 0.0
 dofile("scripts/ui_common.lua")
 dofile("scripts/spell_config.lua")
+local GameScene = dofile("scripts/game_scene.lua")
 
 local editor_root = {
 	y = 50
@@ -162,6 +163,15 @@ local function return_button()
 	UI.render_menu_button("return", "Return", editor_y(start_y), 0, layout, engine.main_menu)
 end
 
+local function draw_ecs_summary()
+	local entities = (GameScene.ecs and GameScene.ecs.entities) or {}
+	local entity_count = #entities
+	local summary_y = editor_y(470)
+
+	engine.text("Gameplay ECS", 28, 0, summary_y, engine.screen_width(), 30)
+	engine.text("Entities in scene: " .. tostring(entity_count), 20, 0, summary_y + 34, engine.screen_width(), 24)
+end
+
 function update_editor()
 	intro_timer = intro_timer + engine.delta_time()
 	if SpellConfig.handle_slot_input() then
@@ -169,5 +179,6 @@ function update_editor()
 	end
 	draw_spell_slot_buttons()
 	draw_spell_editor()
+	draw_ecs_summary()
 	return_button()
 end
