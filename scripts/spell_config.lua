@@ -123,9 +123,9 @@ end
 function SpellConfig.recalculate_damage(spell)
     spell = spell or SpellConfig.get_active_spell()
     local base = 14.0
-    local count_mult = 1.0 + ((spell.projectile_count - 1.0) * 0.35)
+    local count_mult = 1.0 / spell.projectile_count
     local speed_mult = 0.65 + (spell.projectile_speed / 700.0)
-    local size_mult = 0.60 + (spell.projectile_size / 24.0)
+    local size_mult = 1.0 / (1.0 + (spell.projectile_size - 10.0) / 20.0)
     local ricochet_mult = spell.ricochet and 1.18 or 1.0
 
     local value = base * count_mult * speed_mult * size_mult * ricochet_mult

@@ -137,6 +137,22 @@ public:
     /// @brief Returns frame delta time in seconds.
     float DeltaTime() const;
 
+    /// @brief Spawns an entity from a Lua table definition (ECS-compliant).
+    /// @param L The Lua state. Table at top of stack will be read and instantiated.
+    void SpawnEntity(lua_State *L);
+
+    /// @brief Spawns an enemy entity at the specified position and velocity (legacy).
+    /// @param x X position in pixels.
+    /// @param y Y position in pixels.
+    /// @param vx X velocity component.
+    /// @param vy Y velocity component.
+    /// @param radius Collision radius of the enemy.
+    void SpawnEnemy(float x, float y, float vx, float vy, float radius);
+
+    /// @brief Returns the count of active enemy entities.
+    /// @return Number of entities with the enemy_tag component.
+    int CountEnemies() const;
+
     /// @brief Returns the active gameplay registry for entity/component composition.
     entt::registry &Registry();
     const entt::registry &Registry() const;

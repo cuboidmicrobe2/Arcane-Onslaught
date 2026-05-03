@@ -169,6 +169,32 @@ inline int lua_delta_time(lua_State *L)
     return 1;
 }
 
+inline int lua_spawn_enemy(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float vx = static_cast<float>(luaL_checknumber(L, 3));
+    float vy = static_cast<float>(luaL_checknumber(L, 4));
+    float radius = static_cast<float>(luaL_checknumber(L, 5));
+
+    api->SpawnEnemy(x, y, vx, vy, radius);
+    return 0;
+}
+
+inline int lua_spawn_entity(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    api->SpawnEntity(L);
+    return 0;
+}
+
+inline int lua_count_enemies(lua_State *L)
+{
+    lua_pushinteger(L, GetEngineApi(L)->CountEnemies());
+    return 1;
+}
+
 inline void set_engine_function(lua_State *L, const char *name, lua_CFunction fn, EngineAPI &api)
 {
     lua_pushlightuserdata(L, &api);
@@ -204,6 +230,9 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     set_engine_function(L, "screen_width", lua_screen_width, api);
     set_engine_function(L, "screen_height", lua_screen_height, api);
     set_engine_function(L, "delta_time", lua_delta_time, api);
+    set_engine_function(L, "spawn_enemy", lua_spawn_enemy, api);
+    set_engine_function(L, "spawn_entity", lua_spawn_entity, api);
+    set_engine_function(L, "count_enemies", lua_count_enemies, api);
 
     lua_setglobal(L, "engine");
 
@@ -225,4 +254,7 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     set_global_engine_function(L, "screen_width", lua_screen_width, api);
     set_global_engine_function(L, "screen_height", lua_screen_height, api);
     set_global_engine_function(L, "delta_time", lua_delta_time, api);
+    set_global_engine_function(L, "spawn_enemy", lua_spawn_enemy, api);
+    set_global_engine_function(L, "spawn_entity", lua_spawn_entity, api);
+    set_global_engine_function(L, "count_enemies", lua_count_enemies, api);
 }

@@ -36,7 +36,8 @@ function ECS.enemy(position, velocity, radius)
         enemy_tag = true,
         position = position,
         velocity = velocity,
-        circle_collider = ECS.circle(radius)
+        circle_collider = ECS.circle(radius),
+        health = ECS.health(100)
     })
 end
 

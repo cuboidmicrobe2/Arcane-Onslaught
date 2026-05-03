@@ -7,6 +7,13 @@
 #include <cmath>
 #include <cstdio>
 
+extern "C"
+{
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+}
+
 EngineAPI::EngineAPI(EngineState &state) : m_state(state) {}
 
 void EngineAPI::BeginFrame()
@@ -375,6 +382,31 @@ float EngineAPI::ScreenHeight() const
 float EngineAPI::DeltaTime() const
 {
     return GetFrameTime();
+}
+
+void EngineAPI::SpawnEnemy(float x, float y, float vx, float vy, float radius)
+{
+    const entt::entity enemy = m_registry.create();
+    m_registry.emplace<GameEcs::EnemyTag>(enemy);
+    m_registry.emplace<GameEcs::Position>(enemy, Vector2{x, y});
+    m_registry.emplace<GameEcs::Velocity>(enemy, Vector2{vx, vy});
+    m_registry.emplace<GameEcs::CircleCollider>(enemy, radius);
+}
+
+void EngineAPI::SpawnEntity(lua_State *L)
+{
+    if (L == nullptr || !lua_istable(L, -1))
+    {
+        return;
+    }
+
+    GameEcs::ImportEntityFromTable(m_registry, L, -1);
+}
+
+int EngineAPI::CountEnemies() const
+{
+    auto enemies = m_registry.view<GameEcs::EnemyTag>();
+    return static_cast<int>(enemies.size());
 }
 
 entt::registry &EngineAPI::Registry()

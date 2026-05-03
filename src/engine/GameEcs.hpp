@@ -73,6 +73,9 @@ namespace GameEcs
 
     bool InitializeWorld(entt::registry &registry, lua_State *L);
     void SetSpellTuning(entt::registry &registry, const SpellTuning &tuning);
+
+    // Exposed for entity spawning via Lua
+    bool ImportEntityFromTable(entt::registry &registry, lua_State *L, int entityIndex);
     void UpdatePlayers(entt::registry &registry, const FrameContext &frame);
     void SpawnPlayerProjectiles(entt::registry &registry, const FrameContext &frame);
     void UpdateProjectiles(entt::registry &registry, const FrameContext &frame);

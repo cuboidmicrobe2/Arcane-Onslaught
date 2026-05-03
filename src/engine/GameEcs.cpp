@@ -101,6 +101,10 @@ namespace
         return ok;
     }
 
+} // namespace
+
+namespace GameEcs
+{
     bool ImportEntityFromTable(entt::registry &registry, lua_State *L, int entityIndex)
     {
         const int tableIndex = lua_absindex(L, entityIndex);
@@ -197,10 +201,7 @@ namespace
 
         return true;
     }
-} // namespace
 
-namespace GameEcs
-{
     namespace
     {
         Vector2 ReadPlayerMoveInput()
@@ -273,7 +274,7 @@ namespace GameEcs
             registry.emplace<Velocity>(projectile, Vector2{direction.x * tuning.projectileSpeed, direction.y * tuning.projectileSpeed});
             registry.emplace<CircleCollider>(projectile, tuning.projectileSize);
             registry.emplace<ProjectileDamage>(projectile, std::max(1, tuning.damage));
-            registry.emplace<ProjectileRicochet>(projectile, tuning.ricochet ? 3 : 0);
+            registry.emplace<ProjectileRicochet>(projectile, tuning.ricochet ? 1 : 0);
         }
     } // namespace
 
@@ -388,7 +389,7 @@ namespace GameEcs
                 SpawnProjectileEntity(registry, spawnPos, dir, tuning);
             }
 
-            cooldown.seconds = kMaxPlayerFireRate;
+            cooldown.seconds = kMaxPlayerFireRate * static_cast<float>(count);
             break;
         }
     }
@@ -461,7 +462,7 @@ namespace GameEcs
     void ResolveProjectileEnemyCollisions(entt::registry &registry)
     {
         auto projectiles = registry.view<ProjectileTag, Position, CircleCollider, ProjectileDamage, ProjectileRicochet>();
-        auto enemies = registry.view<EnemyTag, Position, CircleCollider>();
+        auto enemies = registry.view<EnemyTag, Position, CircleCollider, Health>();
 
         std::vector<entt::entity> projectileDestroy;
         std::vector<entt::entity> enemyDestroy;
@@ -470,6 +471,7 @@ namespace GameEcs
         {
             auto &projPos = projectiles.get<Position>(projectile);
             const auto &projCol = projectiles.get<CircleCollider>(projectile);
+            const auto &projDamage = projectiles.get<ProjectileDamage>(projectile);
             auto &ricochet = projectiles.get<ProjectileRicochet>(projectile);
             bool hitSomething = false;
 
@@ -482,7 +484,16 @@ namespace GameEcs
                     continue;
                 }
 
-                enemyDestroy.push_back(enemy);
+                // Apply damage to enemy
+                auto &enemyHealth = enemies.get<Health>(enemy);
+                enemyHealth.hp -= projDamage.value;
+
+                // Destroy enemy if health reaches 0 or below
+                if (enemyHealth.hp <= 0)
+                {
+                    enemyDestroy.push_back(enemy);
+                }
+
                 hitSomething = true;
                 if (ricochet.bouncesLeft > 0)
                 {
@@ -557,6 +568,18 @@ namespace GameEcs
 
     void UpdateEnemies(entt::registry &registry, const FrameContext &frame)
     {
+        // Get player position for dynamic following
+        auto players = registry.view<PlayerTag, Position>();
+        Vector2 playerPos{0.0f, 0.0f};
+        bool playerExists = false;
+
+        for (auto entity : players)
+        {
+            playerPos = players.get<Position>(entity).value;
+            playerExists = true;
+            break;
+        }
+
         auto enemies = registry.view<EnemyTag, Position, Velocity, CircleCollider>();
         for (auto entity : enemies)
         {
@@ -564,7 +587,32 @@ namespace GameEcs
             auto &velocity = enemies.get<Velocity>(entity);
             const auto &collider = enemies.get<CircleCollider>(entity);
 
+            // Dynamically update velocity to follow player
+            if (playerExists)
+            {
+                float dx = playerPos.x - position.value.x;
+                float dy = playerPos.y - position.value.y;
+                float dist = std::sqrt(dx * dx + dy * dy);
+
+                if (dist > 0.1f)
+                {
+                    // Get current speed magnitude
+                    float currentSpeed = std::sqrt(velocity.value.x * velocity.value.x + velocity.value.y * velocity.value.y);
+                    if (currentSpeed < 0.1f)
+                    {
+                        currentSpeed = 150.0f; // Default speed
+                    }
+
+                    // Normalize direction and apply speed
+                    velocity.value.x = (dx / dist) * currentSpeed;
+                    velocity.value.y = (dy / dist) * currentSpeed;
+                }
+            }
+
             position.value.x += velocity.value.x * frame.dt;
+            position.value.y += velocity.value.y * frame.dt;
+
+            // Boundary collision for X axis
             if (position.value.x < collider.radius)
             {
                 position.value.x = collider.radius;
@@ -574,6 +622,18 @@ namespace GameEcs
             {
                 position.value.x = frame.width - collider.radius;
                 velocity.value.x = -std::fabs(velocity.value.x);
+            }
+
+            // Boundary collision for Y axis
+            if (position.value.y < collider.radius)
+            {
+                position.value.y = collider.radius;
+                velocity.value.y = std::fabs(velocity.value.y);
+            }
+            else if (position.value.y > frame.height - collider.radius)
+            {
+                position.value.y = frame.height - collider.radius;
+                velocity.value.y = -std::fabs(velocity.value.y);
             }
         }
     }
@@ -617,12 +677,18 @@ namespace GameEcs
 
     void DrawEnemies(entt::registry &registry)
     {
-        auto enemies = registry.view<EnemyTag, Position, CircleCollider>();
+        auto enemies = registry.view<EnemyTag, Position, CircleCollider, Health>();
         for (auto entity : enemies)
         {
             const auto &pos = enemies.get<Position>(entity);
             const auto &col = enemies.get<CircleCollider>(entity);
+            const auto &health = enemies.get<Health>(entity);
             DrawCircleV(pos.value, col.radius, Color{222, 72, 86, 255});
+
+            // Draw health above enemy
+            const char *healthText = TextFormat("%d", health.hp);
+            int textWidth = MeasureText(healthText, 20);
+            DrawText(healthText, static_cast<int>(pos.value.x - textWidth * 0.5f), static_cast<int>(pos.value.y - col.radius - 28), 20, RAYWHITE);
         }
     }
 

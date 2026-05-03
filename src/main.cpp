@@ -5,7 +5,6 @@
 int main()
 {
     InitWindow(2560, 1440, "Arcane Onslaught");
-    ToggleFullscreen();
     SetTargetFPS(60);
     SetExitKey(KEY_F1);
 
