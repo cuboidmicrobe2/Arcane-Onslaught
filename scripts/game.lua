@@ -1,5 +1,6 @@
 dofile("scripts/ui_common.lua")
 dofile("scripts/spell_config.lua")
+local GameSettings = dofile("scripts/game_settings.lua")
 local GameScene = dofile("scripts/game_scene.lua")
 
 local WaveSystem = GameScene.wave_system
@@ -16,11 +17,16 @@ function update_game()
         spell.projectile_speed,
         spell.projectile_size,
         spell.ricochet,
-        spell.damage
+        spell.damage,
+        spell.color.r,
+        spell.color.g,
+        spell.color.b
     )
 
     -- Start first wave on first frame
     if not wave_started then
+        -- Set endless mode from saved settings
+        WaveSystem.set_endless_mode(GameSettings.get_endless_mode())
         WaveSystem.start_wave()
         wave_started = true
     end
@@ -38,15 +44,13 @@ function update_game()
         engine.main_menu()
     end
 
-    -- Draw wave information on the right
+    -- Draw wave information
     local wave_state = WaveSystem.get_state()
-    local wave_text = string.format("Wave: %d | Spawned: %d/%d | Alive: %d", 
+    local wave_text = string.format("Wave: %d | Alive: %d", 
         wave_state.current_wave, 
-        wave_state.enemies_spawned,
-        wave_state.total_enemies_in_wave,
         wave_state.enemies_remaining)
     
-    engine.text(wave_text, 24, engine.screen_width() - 524, 24, 500, 24)
+    engine.text(wave_text, 24, engine.screen_width() - 400, 24, 350, 24)
     engine.text(spell.name, 24, 0, engine.screen_height() - 34, engine.screen_width(), 24)
     
     -- Display you win text after defeating all waves

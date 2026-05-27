@@ -18,7 +18,8 @@ local wave_state = {
     spawn_timer = 0.0,
     paused = false,
     game_won = false,
-    player_pos = ECS.vec2(0, 0)  -- Will be set in init
+    player_pos = ECS.vec2(0, 0),  -- Will be set in init
+    endless_mode = false
 }
 
 -- Enemy spawn patterns - spawn at edges and move towards player
@@ -87,10 +88,20 @@ function WaveSystem.update(delta_time)
         return
     end
     
+    -- Get current wave config or generate one for endless mode
     local current_wave = WAVES[wave_state.current_wave]
     if not current_wave then
-        -- All waves defeated - loop back or handle game over
-        return
+        if wave_state.endless_mode then
+            -- Generate endless waves with increasing difficulty
+            local wave_num = wave_state.current_wave
+            current_wave = {
+                enemy_count = 3 + (wave_num - 1) * 2,  -- +2 enemies per wave
+                spawn_interval = math.max(0.2, 0.6 - (wave_num - 5) * 0.05)  -- Faster spawns
+            }
+        else
+            -- Non-endless: all waves defeated
+            return
+        end
     end
     
     -- Spawn enemies at intervals
@@ -102,13 +113,15 @@ function WaveSystem.update(delta_time)
         local enemy_data = get_enemy_spawn_pattern(wave_state.enemies_spawned, wave_state.current_wave, wave_state.player_pos)
         
         -- Create enemy entity from Lua table and spawn it via engine
-        local enemy_entity = ECS.enemy(enemy_data.pos, enemy_data.vel, enemy_data.radius)
+        local enemy_entity = ECS.enemy(enemy_data.pos, ECS.vec2(0, 0), enemy_data.radius)  -- Start with zero velocity
         
         -- Scale health by wave number: 1.1, 1.2, 1.3, etc.
         local health_multiplier = 1.0 + (wave_state.current_wave * 0.1)
         enemy_entity.health.hp = math.max(1, math.floor(enemy_entity.health.hp * health_multiplier + 0.5))
         
-        engine.spawn_entity(enemy_entity)
+        -- Spawn and attach entrance behavior
+        local entity_id = engine.spawn_entity(enemy_entity)
+        engine.attach_behavior(entity_id, ECS.enemy_entrance(entity_id, enemy_data.vel, 10.0))
         
         wave_state.enemies_spawned = wave_state.enemies_spawned + 1
         wave_state.spawn_timer = 0.0
@@ -135,8 +148,14 @@ function WaveSystem.next_wave()
         wave_state.enemies_spawned = 0
         wave_state.spawn_timer = 0.0
         wave_state.wave_active = true
+    elseif wave_state.endless_mode then
+        -- Endless mode: continue to next generated wave
+        wave_state.current_wave = wave_state.current_wave + 1
+        wave_state.enemies_spawned = 0
+        wave_state.spawn_timer = 0.0
+        wave_state.wave_active = true
     else
-        -- All waves completed
+        -- All waves completed (non-endless)
         wave_state.wave_active = false
         wave_state.game_won = true
     end
@@ -174,6 +193,14 @@ function WaveSystem.get_state()
         enemies_remaining = wave_state.last_enemy_count or 0,
         paused = wave_state.paused
     }
+end
+
+function WaveSystem.set_endless_mode(enabled)
+    wave_state.endless_mode = enabled
+end
+
+function WaveSystem.is_endless_mode()
+    return wave_state.endless_mode
 end
 
 return WaveSystem

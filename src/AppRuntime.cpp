@@ -27,6 +27,8 @@ namespace
             return "scripts/game.lua";
         case SceneID::Editor:
             return "scripts/editor.lua";
+        case SceneID::Settings:
+            return "scripts/settings.lua";
         case SceneID::Quit:
             return nullptr;
         }
@@ -44,6 +46,8 @@ namespace
             return "update_game";
         case SceneID::Editor:
             return "update_editor";
+        case SceneID::Settings:
+            return "update_settings";
         case SceneID::Quit:
             return nullptr;
         }

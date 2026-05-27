@@ -5,11 +5,17 @@
 #include <entt/entt.hpp>
 #include <raylib.h>
 
+extern "C"
+{
+#include <lua.h>
+}
+
 enum class SceneID
 {
     MainMenu,
     Game,
     Editor,
+    Settings,
     Quit
 };
 
@@ -84,6 +90,17 @@ public:
     /// @return Updated text value after this frame.
     std::string TextField(const std::string &id, const std::string &value, int maxChars, float x, float y, float w, float h, const std::string &label);
 
+    /// @brief Draws a filled rectangle.
+    /// @param x Left position in pixels.
+    /// @param y Top position in pixels.
+    /// @param w Width in pixels.
+    /// @param h Height in pixels.
+    /// @param r Red component (0-255).
+    /// @param g Green component (0-255).
+    /// @param b Blue component (0-255).
+    /// @param a Alpha component (0-255).
+    void DrawRect(float x, float y, float w, float h, unsigned char r, unsigned char g, unsigned char b, unsigned char a);
+
     /// @brief Queues transition to the main menu scene.
     void MainMenu();
 
@@ -92,6 +109,9 @@ public:
 
     /// @brief Queues transition to the editor scene.
     void OpenEditor();
+
+    /// @brief Queues transition to the settings scene.
+    void OpenSettings();
 
     /// @brief Requests graceful application shutdown.
     void Quit();
@@ -114,7 +134,10 @@ public:
     /// @param projectileSize Projectile radius/size.
     /// @param ricochet Whether projectiles bounce on collision.
     /// @param damage Base damage applied on hit.
-    void SetSpellConfig(int projectileCount, float projectileSpeed, float projectileSize, bool ricochet, int damage);
+    /// @param colorR Red component (0.0-1.0).
+    /// @param colorG Green component (0.0-1.0).
+    /// @param colorB Blue component (0.0-1.0).
+    void SetSpellConfig(int projectileCount, float projectileSpeed, float projectileSize, bool ricochet, int damage, float colorR = 1.0f, float colorG = 0.82f, float colorB = 0.33f);
 
     /// @brief Reports which numeric spell-slot key (1-5) was pressed this frame.
     /// @return Value in [1, 5], or 0 when no slot key was pressed.
@@ -137,6 +160,19 @@ public:
     /// @brief Returns frame delta time in seconds.
     float DeltaTime() const;
 
+    /// @brief Checks if the window is in fullscreen mode.
+    /// @return True if fullscreen is enabled.
+    bool IsFullscreen() const;
+
+    /// @brief Toggles fullscreen mode.
+    /// @param enable True to enable fullscreen, false for windowed.
+    void SetFullscreen(bool enable);
+
+    /// @brief Sets the window resolution.
+    /// @param width New width in pixels.
+    /// @param height New height in pixels.
+    void SetResolution(int width, int height);
+
     /// @brief Spawns an entity from a Lua table definition (ECS-compliant).
     /// @param L The Lua state. Table at top of stack will be read and instantiated.
     void SpawnEntity(lua_State *L);
@@ -157,12 +193,37 @@ public:
     entt::registry &Registry();
     const entt::registry &Registry() const;
 
+    /// @brief Pushes all entity IDs onto the Lua stack as a table.
+    /// @param L The Lua state. A new table of entity IDs will be pushed.
+    void GetAllEntities(lua_State *L);
+
+    /// @brief Pushes an entity's component data onto the Lua stack as a table.
+    /// @param L The Lua state. Component data table will be pushed, or nil if entity doesn't exist.
+    /// @param entityId The entity handle.
+    void GetEntityData(lua_State *L, uint32_t entityId);
+
+    /// @brief Updates an entity's components from a Lua table definition.
+    /// @param L The Lua state. Table at top of stack contains component updates.
+    /// @param entityId The entity handle to update.
+    /// @return True if the entity exists and update succeeds.
+    bool UpdateEntityData(lua_State *L, uint32_t entityId);
+
+    /// @brief Removes an entity from the registry.
+    /// @param entityId The entity handle to delete.
+    void DeleteEntity(uint32_t entityId);
+
+    /// @brief Attaches a behavior co-routine to an entity.
+    /// @param entityId The entity handle.
+    /// @param L The Lua state. Co-routine at top of stack.
+    void AttachBehavior(uint32_t entityId, lua_State *L);
+
 private:
     void ResetGameEcs();
 
     EngineState &m_state;
     entt::registry m_registry;
     bool m_gameInitialized = false;
+    struct lua_State *m_lua = nullptr;
     std::unordered_map<std::string, bool> m_prevDown;
     std::string m_activeSliderId;
     std::string m_activeTextFieldId;

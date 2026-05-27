@@ -7,6 +7,15 @@ local DEFAULTS = {
     ricochet = false
 }
 
+-- Color for each spell slot (RGB normalized 0-1 for Lua, converted to 0-255 in C++)
+local SPELL_COLORS = {
+    { r = 1.0, g = 0.82, b = 0.33 },  -- Slot 1: Golden yellow
+    { r = 0.2, g = 0.8, b = 1.0 },    -- Slot 2: Cyan blue
+    { r = 1.0, g = 0.2, b = 0.8 },    -- Slot 3: Magenta pink
+    { r = 0.2, g = 1.0, b = 0.4 },    -- Slot 4: Lime green
+    { r = 1.0, g = 0.5, b = 0.2 },    -- Slot 5: Orange red
+}
+
 SpellConfig.save_path = "scripts/spell_saved.lua"
 
 local function parse_slot_count_from_text(text)
@@ -26,13 +35,15 @@ local function default_spell_name(slot)
 end
 
 local function new_spell(slot)
+    local color = SPELL_COLORS[slot] or SPELL_COLORS[1]
     return {
         name = default_spell_name(slot or 1),
         projectile_count = DEFAULTS.projectile_count,
         projectile_speed = DEFAULTS.projectile_speed,
         projectile_size = DEFAULTS.projectile_size,
         ricochet = DEFAULTS.ricochet,
-        damage = 18
+        damage = 18,
+        color = color
     }
 end
 

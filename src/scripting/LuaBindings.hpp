@@ -90,6 +90,22 @@ inline int lua_checkbox(lua_State *L)
     return 1;
 }
 
+inline int lua_draw_rect(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float w = static_cast<float>(luaL_checknumber(L, 3));
+    float h = static_cast<float>(luaL_checknumber(L, 4));
+    unsigned char r = static_cast<unsigned char>(luaL_checkinteger(L, 5));
+    unsigned char g = static_cast<unsigned char>(luaL_checkinteger(L, 6));
+    unsigned char b = static_cast<unsigned char>(luaL_checkinteger(L, 7));
+    unsigned char a = static_cast<unsigned char>(luaL_checkinteger(L, 8));
+
+    api->DrawRect(x, y, w, h, r, g, b, a);
+    return 0;
+}
+
 inline int lua_main_menu(lua_State *L)
 {
     GetEngineApi(L)->MainMenu();
@@ -105,6 +121,12 @@ inline int lua_start_game(lua_State *L)
 inline int lua_open_editor(lua_State *L)
 {
     GetEngineApi(L)->OpenEditor();
+    return 0;
+}
+
+inline int lua_open_settings(lua_State *L)
+{
+    GetEngineApi(L)->OpenSettings();
     return 0;
 }
 
@@ -129,7 +151,16 @@ inline int lua_set_spell_config(lua_State *L)
     bool ricochet = lua_toboolean(L, 4) != 0;
     int damage = static_cast<int>(luaL_checkinteger(L, 5));
 
-    api->SetSpellConfig(projectileCount, projectileSpeed, projectileSize, ricochet, damage);
+    // Color parameters (optional, default to golden yellow if not provided)
+    float r = 1.0f, g = 0.82f, b = 0.33f;
+    if (lua_isnumber(L, 6) && lua_isnumber(L, 7) && lua_isnumber(L, 8))
+    {
+        r = static_cast<float>(luaL_checknumber(L, 6));
+        g = static_cast<float>(luaL_checknumber(L, 7));
+        b = static_cast<float>(luaL_checknumber(L, 8));
+    }
+
+    api->SetSpellConfig(projectileCount, projectileSpeed, projectileSize, ricochet, damage, r, g, b);
     return 0;
 }
 
@@ -169,6 +200,27 @@ inline int lua_delta_time(lua_State *L)
     return 1;
 }
 
+inline int lua_is_fullscreen(lua_State *L)
+{
+    lua_pushboolean(L, GetEngineApi(L)->IsFullscreen() ? 1 : 0);
+    return 1;
+}
+
+inline int lua_set_fullscreen(lua_State *L)
+{
+    bool enable = lua_toboolean(L, 1) != 0;
+    GetEngineApi(L)->SetFullscreen(enable);
+    return 0;
+}
+
+inline int lua_set_resolution(lua_State *L)
+{
+    int width = static_cast<int>(luaL_checkinteger(L, 1));
+    int height = static_cast<int>(luaL_checkinteger(L, 2));
+    GetEngineApi(L)->SetResolution(width, height);
+    return 0;
+}
+
 inline int lua_spawn_enemy(lua_State *L)
 {
     EngineAPI *api = GetEngineApi(L);
@@ -186,13 +238,62 @@ inline int lua_spawn_entity(lua_State *L)
 {
     EngineAPI *api = GetEngineApi(L);
     api->SpawnEntity(L);
-    return 0;
+    return 1;
 }
 
 inline int lua_count_enemies(lua_State *L)
 {
     lua_pushinteger(L, GetEngineApi(L)->CountEnemies());
     return 1;
+}
+
+inline int lua_get_all_entities(lua_State *L)
+{
+    GetEngineApi(L)->GetAllEntities(L);
+    return 1;
+}
+
+inline int lua_get_entity_data(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    uint32_t entityId = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    api->GetEntityData(L, entityId);
+    return 1;
+}
+
+inline int lua_update_entity_data(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    uint32_t entityId = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    luaL_checktype(L, 2, LUA_TTABLE);
+    lua_pushvalue(L, 2);
+    bool success = api->UpdateEntityData(L, entityId);
+    lua_pop(L, 1);
+    lua_pushboolean(L, success ? 1 : 0);
+    return 1;
+}
+
+inline int lua_delete_entity(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    uint32_t entityId = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    api->DeleteEntity(entityId);
+    return 0;
+}
+
+inline int lua_attach_behavior(lua_State *L)
+{
+    EngineAPI *api = GetEngineApi(L);
+    uint32_t entityId = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    luaL_checktype(L, 2, LUA_TTHREAD);
+    api->AttachBehavior(entityId, L);
+    return 0;
+}
+
+inline int lua_coroutine_yield_frame(lua_State *L)
+{
+    // Yield the co-routine - when called from within a behavior, this pauses execution
+    return lua_yield(L, 0);
 }
 
 inline void set_engine_function(lua_State *L, const char *name, lua_CFunction fn, EngineAPI &api)
@@ -218,9 +319,11 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     set_engine_function(L, "slider", lua_slider, api);
     set_engine_function(L, "text_field", lua_text_field, api);
     set_engine_function(L, "checkbox", lua_checkbox, api);
+    set_engine_function(L, "draw_rect", lua_draw_rect, api);
     set_engine_function(L, "main_menu", lua_main_menu, api);
     set_engine_function(L, "start_game", lua_start_game, api);
     set_engine_function(L, "open_editor", lua_open_editor, api);
+    set_engine_function(L, "open_settings", lua_open_settings, api);
     set_engine_function(L, "quit_game", lua_quit_game, api);
     set_engine_function(L, "run_game", lua_run_game, api);
     set_engine_function(L, "set_spell_config", lua_set_spell_config, api);
@@ -230,9 +333,18 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     set_engine_function(L, "screen_width", lua_screen_width, api);
     set_engine_function(L, "screen_height", lua_screen_height, api);
     set_engine_function(L, "delta_time", lua_delta_time, api);
+    set_engine_function(L, "is_fullscreen", lua_is_fullscreen, api);
+    set_engine_function(L, "set_fullscreen", lua_set_fullscreen, api);
+    set_engine_function(L, "set_resolution", lua_set_resolution, api);
     set_engine_function(L, "spawn_enemy", lua_spawn_enemy, api);
     set_engine_function(L, "spawn_entity", lua_spawn_entity, api);
     set_engine_function(L, "count_enemies", lua_count_enemies, api);
+    set_engine_function(L, "get_all_entities", lua_get_all_entities, api);
+    set_engine_function(L, "get_entity_data", lua_get_entity_data, api);
+    set_engine_function(L, "update_entity_data", lua_update_entity_data, api);
+    set_engine_function(L, "delete_entity", lua_delete_entity, api);
+    set_engine_function(L, "attach_behavior", lua_attach_behavior, api);
+    set_engine_function(L, "coroutine_yield_frame", lua_coroutine_yield_frame, api);
 
     lua_setglobal(L, "engine");
 
@@ -242,9 +354,11 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     set_global_engine_function(L, "slider", lua_slider, api);
     set_global_engine_function(L, "text_field", lua_text_field, api);
     set_global_engine_function(L, "checkbox", lua_checkbox, api);
+    set_global_engine_function(L, "draw_rect", lua_draw_rect, api);
     set_global_engine_function(L, "main_menu", lua_main_menu, api);
     set_global_engine_function(L, "start_game", lua_start_game, api);
     set_global_engine_function(L, "open_editor", lua_open_editor, api);
+    set_global_engine_function(L, "open_settings", lua_open_settings, api);
     set_global_engine_function(L, "quit_game", lua_quit_game, api);
     set_global_engine_function(L, "run_game", lua_run_game, api);
     set_global_engine_function(L, "set_spell_config", lua_set_spell_config, api);
@@ -254,7 +368,16 @@ inline void registerEngineApi(lua_State *L, EngineAPI &api)
     set_global_engine_function(L, "screen_width", lua_screen_width, api);
     set_global_engine_function(L, "screen_height", lua_screen_height, api);
     set_global_engine_function(L, "delta_time", lua_delta_time, api);
+    set_global_engine_function(L, "is_fullscreen", lua_is_fullscreen, api);
+    set_global_engine_function(L, "set_fullscreen", lua_set_fullscreen, api);
+    set_global_engine_function(L, "set_resolution", lua_set_resolution, api);
     set_global_engine_function(L, "spawn_enemy", lua_spawn_enemy, api);
     set_global_engine_function(L, "spawn_entity", lua_spawn_entity, api);
     set_global_engine_function(L, "count_enemies", lua_count_enemies, api);
+    set_global_engine_function(L, "get_all_entities", lua_get_all_entities, api);
+    set_global_engine_function(L, "get_entity_data", lua_get_entity_data, api);
+    set_global_engine_function(L, "update_entity_data", lua_update_entity_data, api);
+    set_global_engine_function(L, "delete_entity", lua_delete_entity, api);
+    set_global_engine_function(L, "attach_behavior", lua_attach_behavior, api);
+    set_global_engine_function(L, "coroutine_yield_frame", lua_coroutine_yield_frame, api);
 }

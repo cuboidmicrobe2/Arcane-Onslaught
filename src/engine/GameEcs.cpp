@@ -105,12 +105,12 @@ namespace
 
 namespace GameEcs
 {
-    bool ImportEntityFromTable(entt::registry &registry, lua_State *L, int entityIndex)
+    entt::entity ImportEntityFromTable(entt::registry &registry, lua_State *L, int entityIndex)
     {
         const int tableIndex = lua_absindex(L, entityIndex);
         if (!lua_istable(L, tableIndex))
         {
-            return false;
+            return entt::null;
         }
 
         const entt::entity entity = registry.create();
@@ -165,6 +165,16 @@ namespace GameEcs
         }
         lua_pop(L, 1);
 
+        float iFrameSeconds = 0.0f;
+        if (lua_getfield(L, tableIndex, "i_frames") == LUA_TTABLE)
+        {
+            if (ReadFloatField(L, -1, "seconds", iFrameSeconds))
+            {
+                registry.emplace<GameEcs::IFrames>(entity, iFrameSeconds);
+            }
+        }
+        lua_pop(L, 1);
+
         bool flag = false;
         if (ReadBoolField(L, tableIndex, "player_tag", flag) && flag)
         {
@@ -199,7 +209,22 @@ namespace GameEcs
         }
         lua_pop(L, 1);
 
-        return true;
+        float width = 0.0f, height = 0.0f;
+        if (lua_getfield(L, tableIndex, "rect_collider") == LUA_TTABLE)
+        {
+            if (ReadFloatField(L, -1, "width", width) && ReadFloatField(L, -1, "height", height))
+            {
+                registry.emplace<GameEcs::RectCollider>(entity, width, height);
+            }
+        }
+        lua_pop(L, 1);
+
+        if (ReadBoolField(L, tableIndex, "wall_tag", flag) && flag)
+        {
+            registry.emplace<GameEcs::WallTag>(entity);
+        }
+
+        return entity;
     }
 
     namespace
@@ -272,9 +297,39 @@ namespace GameEcs
             registry.emplace<ProjectileTag>(projectile);
             registry.emplace<Position>(projectile, pos);
             registry.emplace<Velocity>(projectile, Vector2{direction.x * tuning.projectileSpeed, direction.y * tuning.projectileSpeed});
-            registry.emplace<CircleCollider>(projectile, tuning.projectileSize);
+            registry.emplace<Rotation>(projectile, 0.0f);
+            registry.emplace<CircleCollider>(projectile, tuning.projectileSize * 0.5f); // Smaller collision radius
+            registry.emplace<ProjectileColor>(projectile, tuning.projectileColor);
             registry.emplace<ProjectileDamage>(projectile, std::max(1, tuning.damage));
             registry.emplace<ProjectileRicochet>(projectile, tuning.ricochet ? 1 : 0);
+        }
+
+        // Helper to resolve circle-rectangle collision by pushing circle out
+        void ResolveCircleRectCollision(Vector2 &circlePos, float circleRadius, const Vector2 &rectPos, float rectWidth, float rectHeight)
+        {
+            float rectLeft = rectPos.x - rectWidth * 0.5f;
+            float rectRight = rectPos.x + rectWidth * 0.5f;
+            float rectTop = rectPos.y - rectHeight * 0.5f;
+            float rectBottom = rectPos.y + rectHeight * 0.5f;
+
+            // Find closest point on rect to circle center
+            float closestX = std::clamp(circlePos.x, rectLeft, rectRight);
+            float closestY = std::clamp(circlePos.y, rectTop, rectBottom);
+
+            float dx = circlePos.x - closestX;
+            float dy = circlePos.y - closestY;
+            float distSq = dx * dx + dy * dy;
+            float minDist = circleRadius;
+
+            if (distSq < minDist * minDist && distSq > 0.0001f)
+            {
+                float dist = std::sqrt(distSq);
+                float overlap = minDist - dist;
+                float pushX = (dx / dist) * overlap;
+                float pushY = (dy / dist) * overlap;
+                circlePos.x += pushX;
+                circlePos.y += pushY;
+            }
         }
     } // namespace
 
@@ -301,7 +356,8 @@ namespace GameEcs
                 for (int i = 1; i <= entityCount; ++i)
                 {
                     lua_rawgeti(L, entitiesIndex, i);
-                    ImportEntityFromTable(registry, L, -1);
+                    entt::entity e = ImportEntityFromTable(registry, L, -1);
+                    (void)e; // Suppress unused warning
                     lua_pop(L, 1);
                 }
             }
@@ -325,6 +381,8 @@ namespace GameEcs
     void UpdatePlayers(entt::registry &registry, const FrameContext &frame)
     {
         auto players = registry.view<PlayerTag, Position, Velocity, CircleCollider, DamageCooldown>();
+        auto walls = registry.view<WallTag, Position, RectCollider>();
+
         for (auto entity : players)
         {
             auto &position = players.get<Position>(entity);
@@ -340,6 +398,14 @@ namespace GameEcs
 
             position.value.x = std::clamp(position.value.x, collider.radius, frame.width - collider.radius);
             position.value.y = std::clamp(position.value.y, collider.radius, frame.height - collider.radius);
+
+            // Resolve wall collisions
+            for (auto wallEntity : walls)
+            {
+                const auto &wallPos = walls.get<Position>(wallEntity);
+                const auto &wallCol = walls.get<RectCollider>(wallEntity);
+                ResolveCircleRectCollision(position.value, collider.radius, wallPos.value, wallCol.width, wallCol.height);
+            }
 
             cooldown.seconds = std::max(0.0f, cooldown.seconds - frame.dt);
         }
@@ -396,7 +462,7 @@ namespace GameEcs
 
     void UpdateProjectiles(entt::registry &registry, const FrameContext &frame)
     {
-        auto projectiles = registry.view<ProjectileTag, Position, Velocity, CircleCollider, ProjectileRicochet>();
+        auto projectiles = registry.view<ProjectileTag, Position, Velocity, CircleCollider, ProjectileRicochet, Rotation>();
         std::vector<entt::entity> toDestroy;
 
         for (auto entity : projectiles)
@@ -405,9 +471,17 @@ namespace GameEcs
             auto &vel = projectiles.get<Velocity>(entity);
             const auto &col = projectiles.get<CircleCollider>(entity);
             auto &ricochet = projectiles.get<ProjectileRicochet>(entity);
+            auto &rot = projectiles.get<Rotation>(entity);
 
             pos.value.x += vel.value.x * frame.dt;
             pos.value.y += vel.value.y * frame.dt;
+
+            // Rotate projectile
+            rot.angle += 12.0f * frame.dt; // Rotate ~12 radians per second
+            if (rot.angle > 2.0f * 3.14159f)
+            {
+                rot.angle -= 2.0f * 3.14159f;
+            }
 
             bool bounced = false;
 
@@ -533,6 +607,80 @@ namespace GameEcs
         }
     }
 
+    void ResolveProjectileWallCollisions(entt::registry &registry)
+    {
+        auto projectiles = registry.view<ProjectileTag, Position, CircleCollider, Velocity, ProjectileRicochet>();
+        auto walls = registry.view<WallTag, Position, RectCollider>();
+
+        std::vector<entt::entity> projectileDestroy;
+
+        for (auto projectile : projectiles)
+        {
+            auto &projPos = projectiles.get<Position>(projectile);
+            const auto &projCol = projectiles.get<CircleCollider>(projectile);
+            auto &projVel = projectiles.get<Velocity>(projectile);
+            auto &ricochet = projectiles.get<ProjectileRicochet>(projectile);
+
+            for (auto wall : walls)
+            {
+                const auto &wallPos = walls.get<Position>(wall);
+                const auto &wallCol = walls.get<RectCollider>(wall);
+
+                float rectLeft = wallPos.value.x - wallCol.width * 0.5f;
+                float rectRight = wallPos.value.x + wallCol.width * 0.5f;
+                float rectTop = wallPos.value.y - wallCol.height * 0.5f;
+                float rectBottom = wallPos.value.y + wallCol.height * 0.5f;
+
+                // Find closest point on rect to circle center
+                float closestX = std::clamp(projPos.value.x, rectLeft, rectRight);
+                float closestY = std::clamp(projPos.value.y, rectTop, rectBottom);
+
+                float dx = projPos.value.x - closestX;
+                float dy = projPos.value.y - closestY;
+                float distSq = dx * dx + dy * dy;
+                float minDist = projCol.radius;
+
+                if (distSq < minDist * minDist && distSq > 0.0001f)
+                {
+                    // Collision detected
+                    if (ricochet.bouncesLeft > 0)
+                    {
+                        // Bounce off the wall
+                        float dist = std::sqrt(distSq);
+                        float normalX = dx / dist;
+                        float normalY = dy / dist;
+
+                        // Reflect velocity: v' = v - 2(v·n)n
+                        float dotProduct = projVel.value.x * normalX + projVel.value.y * normalY;
+                        projVel.value.x = projVel.value.x - 2.0f * dotProduct * normalX;
+                        projVel.value.y = projVel.value.y - 2.0f * dotProduct * normalY;
+
+                        ricochet.bouncesLeft -= 1;
+
+                        // Push projectile out of wall
+                        float overlap = minDist - dist;
+                        projPos.value.x += normalX * overlap;
+                        projPos.value.y += normalY * overlap;
+                    }
+                    else
+                    {
+                        // Non-ricochet projectile: destroy on wall impact
+                        projectileDestroy.push_back(projectile);
+                    }
+                    break; // Only collide with one wall per frame
+                }
+            }
+        }
+
+        for (entt::entity projectile : projectileDestroy)
+        {
+            if (registry.valid(projectile))
+            {
+                registry.destroy(projectile);
+            }
+        }
+    }
+
     bool HasDefeatedPlayer(entt::registry &registry)
     {
         auto players = registry.view<PlayerTag, Health>();
@@ -550,7 +698,7 @@ namespace GameEcs
     void DrawDefeatOverlay(const FrameContext &frame)
     {
         const char *defeatedText = "You Died!";
-        const int fontSize = 28;
+        const int fontSize = 72;
         const int textWidth = MeasureText(defeatedText, fontSize);
         const int x = static_cast<int>((frame.width - static_cast<float>(textWidth)) * 0.5f);
         const int y = static_cast<int>((frame.height - static_cast<float>(fontSize)) * 0.5f);
@@ -581,6 +729,8 @@ namespace GameEcs
         }
 
         auto enemies = registry.view<EnemyTag, Position, Velocity, CircleCollider>();
+        auto walls = registry.view<WallTag, Position, RectCollider>();
+
         for (auto entity : enemies)
         {
             auto &position = enemies.get<Position>(entity);
@@ -635,12 +785,79 @@ namespace GameEcs
                 position.value.y = frame.height - collider.radius;
                 velocity.value.y = -std::fabs(velocity.value.y);
             }
+
+            // Resolve wall collisions
+            for (auto wallEntity : walls)
+            {
+                const auto &wallPos = walls.get<Position>(wallEntity);
+                const auto &wallCol = walls.get<RectCollider>(wallEntity);
+                ResolveCircleRectCollision(position.value, collider.radius, wallPos.value, wallCol.width, wallCol.height);
+            }
         }
     }
 
-    void ResolveEnemyPlayerCollisions(entt::registry &registry)
+    void UpdateIFrames(entt::registry &registry, const FrameContext &frame)
     {
-        auto players = registry.view<PlayerTag, Position, CircleCollider, Health, DamageCooldown>();
+        auto players = registry.view<PlayerTag, IFrames>();
+
+        for (auto entity : players)
+        {
+            auto &iFrames = players.get<IFrames>(entity);
+            iFrames.seconds = std::max(0.0f, iFrames.seconds - frame.dt);
+        }
+    }
+
+    void UpdateBehaviors(entt::registry &registry, lua_State *L, const FrameContext &frame)
+    {
+        if (L == nullptr)
+        {
+            return;
+        }
+
+        auto behaviors = registry.view<Behavior>();
+        for (auto entity : behaviors)
+        {
+            auto &behavior = behaviors.get<Behavior>(entity);
+
+            // Get co-routine from Lua registry
+            lua_rawgeti(L, LUA_REGISTRYINDEX, behavior.coroutineRef);
+            if (lua_isthread(L, -1))
+            {
+                lua_State *thread = lua_tothread(L, -1);
+                int status = lua_status(thread);
+
+                if (status == LUA_OK || status == LUA_YIELD)
+                {
+                    // Resume the co-routine
+                    int nresults = 0;
+                    int result = lua_resume(thread, L, 0, &nresults);
+
+                    if (result == LUA_ERRRUN)
+                    {
+                        const char *err = lua_tostring(thread, -1);
+                        fprintf(stderr, "Behavior co-routine error: %s\n", err != nullptr ? err : "Unknown error");
+                        lua_pop(thread, 1);
+                        // Unref the dead co-routine
+                        luaL_unref(L, LUA_REGISTRYINDEX, behavior.coroutineRef);
+                        behavior.coroutineRef = LUA_NOREF;
+                        registry.erase<Behavior>(entity);
+                    }
+                    else if (result != LUA_YIELD)
+                    {
+                        // Co-routine finished, clean up the Behavior component (not the entity!)
+                        luaL_unref(L, LUA_REGISTRYINDEX, behavior.coroutineRef);
+                        behavior.coroutineRef = LUA_NOREF;
+                        registry.erase<Behavior>(entity);
+                    }
+                }
+            }
+            lua_pop(L, 1);
+        }
+    }
+
+    void ResolveEnemyPlayerCollisions(entt::registry &registry, lua_State *L)
+    {
+        auto players = registry.view<PlayerTag, Position, CircleCollider, Health, DamageCooldown, IFrames>();
         auto enemies = registry.view<EnemyTag, Position, CircleCollider>();
 
         for (auto playerEntity : players)
@@ -649,8 +866,9 @@ namespace GameEcs
             const auto &playerCol = players.get<CircleCollider>(playerEntity);
             auto &health = players.get<Health>(playerEntity);
             auto &cooldown = players.get<DamageCooldown>(playerEntity);
+            auto &iFrames = players.get<IFrames>(playerEntity);
 
-            if (cooldown.seconds > 0.0f)
+            if (cooldown.seconds > 0.0f || iFrames.seconds > 0.0f)
             {
                 continue;
             }
@@ -671,6 +889,7 @@ namespace GameEcs
             {
                 health.hp = std::max(0, health.hp - 1);
                 cooldown.seconds = 0.65f;
+                iFrames.seconds = 1.5f;
             }
         }
     }
@@ -694,30 +913,112 @@ namespace GameEcs
 
     void DrawProjectiles(entt::registry &registry)
     {
-        auto projectiles = registry.view<ProjectileTag, Position, CircleCollider>();
+        auto projectiles = registry.view<ProjectileTag, Position, CircleCollider, Rotation, ProjectileColor>();
         for (auto entity : projectiles)
         {
             const auto &pos = projectiles.get<Position>(entity);
             const auto &col = projectiles.get<CircleCollider>(entity);
-            DrawCircleV(pos.value, col.radius, Color{255, 210, 86, 255});
+            const auto &rot = projectiles.get<Rotation>(entity);
+            const auto &projColor = projectiles.get<ProjectileColor>(entity);
+
+            Vector2 center = pos.value;
+            float radius = col.radius;
+            float size = radius * 2.0f;
+
+            // Create glow and line colors based on projectile color
+            Color glowColor{
+                static_cast<unsigned char>(projColor.value.r),
+                static_cast<unsigned char>(projColor.value.g),
+                static_cast<unsigned char>(projColor.value.b),
+                80 // Semi-transparent outer glow
+            };
+            Color glowColorMid{
+                static_cast<unsigned char>(projColor.value.r),
+                static_cast<unsigned char>(projColor.value.g),
+                static_cast<unsigned char>(projColor.value.b),
+                120 // More opaque middle glow
+            };
+            Color quadColor = projColor.value; // Full color for quad
+            Color lineColor{
+                static_cast<unsigned char>(projColor.value.r),
+                static_cast<unsigned char>(projColor.value.g),
+                static_cast<unsigned char>(projColor.value.b),
+                150 // Line color with slight transparency
+            };
+
+            // Glow offset - up and left (larger offset for visibility)
+            Vector2 glowCenter = Vector2{center.x - radius * 0.8f, center.y - radius * 0.8f};
+
+            // Outer glow ring (semi-transparent)
+            DrawCircleV(glowCenter, radius * 1.8f, glowColor);
+
+            // Middle glow ring (smaller, more opaque)
+            DrawCircleV(glowCenter, radius * 1.2f, glowColorMid);
+
+            // Inner rotating quad - use radius directly for precise centering
+            Rectangle rect{center.x - radius, center.y - radius, size, size};
+            DrawRectanglePro(rect, Vector2{radius, radius}, rot.angle * 57.2958f, quadColor);
+
+            // Draw radiating lines for magical effect
+            const float lineLength = radius * 1.5f;
+            const int numLines = 4;
+            for (int i = 0; i < numLines; ++i)
+            {
+                float angle = (rot.angle + (i * 3.14159f * 0.5f));
+                float startX = center.x + std::cos(angle) * radius * 0.8f;
+                float startY = center.y + std::sin(angle) * radius * 0.8f;
+                float endX = center.x + std::cos(angle) * lineLength;
+                float endY = center.y + std::sin(angle) * lineLength;
+                DrawLineEx(Vector2{startX, startY}, Vector2{endX, endY}, 2.0f, lineColor);
+            }
+        }
+    }
+
+    void DrawWalls(entt::registry &registry)
+    {
+        auto walls = registry.view<WallTag, Position, RectCollider>();
+        for (auto entity : walls)
+        {
+            const auto &pos = walls.get<Position>(entity);
+            const auto &col = walls.get<RectCollider>(entity);
+            float x = pos.value.x - col.width * 0.5f;
+            float y = pos.value.y - col.height * 0.5f;
+            DrawRectangle(static_cast<int>(x), static_cast<int>(y), static_cast<int>(col.width), static_cast<int>(col.height), Color{150, 150, 150, 255});
+            DrawRectangleLines(static_cast<int>(x), static_cast<int>(y), static_cast<int>(col.width), static_cast<int>(col.height), Color{200, 200, 200, 255});
         }
     }
 
     void DrawPlayersAndHud(entt::registry &registry)
     {
-        auto players = registry.view<PlayerTag, Position, CircleCollider, Health, DamageCooldown>();
+        auto players = registry.view<PlayerTag, Position, CircleCollider, Health, DamageCooldown, IFrames>();
         for (auto entity : players)
         {
             const auto &pos = players.get<Position>(entity);
             const auto &col = players.get<CircleCollider>(entity);
             const auto &health = players.get<Health>(entity);
             const auto &cooldown = players.get<DamageCooldown>(entity);
+            const auto &iFrames = players.get<IFrames>(entity);
 
             Color playerColor = Color{74, 183, 255, 255};
+
+            // Show damage cooldown color
             if (cooldown.seconds > 0.0f)
             {
                 playerColor = Color{255, 203, 95, 255};
             }
+
+            // Flash effect during i-frames - alternate visibility
+            if (iFrames.seconds > 0.0f)
+            {
+                // Flash at 5Hz (0.2s interval)
+                float flashCycle = std::fmod(iFrames.seconds, 0.2f);
+                if (flashCycle < 0.1f)
+                {
+                    // Make player semi-transparent during flash
+                    playerColor.a = 128;
+                }
+            }
+
             DrawCircleV(pos.value, col.radius, playerColor);
 
             DrawText(TextFormat("HP: %d", health.hp), 24, 24, 30, RAYWHITE);

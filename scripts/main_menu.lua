@@ -12,5 +12,6 @@ function update_menu()
 
 	UI.render_menu_button("play", "Play", start_y, 0, layout, engine.start_game)
 	UI.render_menu_button("editor", "Spell Editor", start_y, 1, layout, engine.open_editor)
-	UI.render_menu_button("quit", "Quit", start_y, 2, layout, engine.quit_game)
+	UI.render_menu_button("settings", "Settings", start_y, 2, layout, engine.open_settings)
+	UI.render_menu_button("quit", "Quit", start_y, 3, layout, engine.quit_game)
 end
