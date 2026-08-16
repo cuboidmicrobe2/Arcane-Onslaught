@@ -178,6 +178,7 @@ void AppRuntime::HandlePendingSceneTransition()
 
     m_activeScene = m_state.nextScene;
     m_luaRuntimeError.clear();
+    m_errorDisplayTimer = 0.0;
     if (!LoadSceneScript(m_activeScene))
     {
         m_state.shouldQuit = true;
@@ -205,12 +206,33 @@ void AppRuntime::RunFrame()
 
     m_api.BeginFrame();
 
+    std::string previousError = m_luaRuntimeError;
+
     const char *updateFunction = GetSceneUpdateFunctionName(m_activeScene);
     if (updateFunction != nullptr)
     {
         CallLuaUpdate(m_lua, updateFunction, m_luaRuntimeError);
     }
 
+    // If a new error occurred, print it to stderr and reset the display timer
+    if (!m_luaRuntimeError.empty() && m_luaRuntimeError != previousError)
+    {
+        std::cerr << "Lua runtime error: " << m_luaRuntimeError << "\n";
+        m_errorDisplayTimer = ERROR_DISPLAY_DURATION;
+    }
+
+    // Update the error display timer
+    if (m_errorDisplayTimer > 0.0)
+    {
+        m_errorDisplayTimer -= GetFrameTime();
+    }
+    else if (!m_luaRuntimeError.empty())
+    {
+        // Clear error after timer expires
+        m_luaRuntimeError.clear();
+    }
+
+    // Draw the error if it's currently being displayed
     if (!m_luaRuntimeError.empty())
     {
         DrawText(m_luaRuntimeError.c_str(), 20, 20, 20, RED);

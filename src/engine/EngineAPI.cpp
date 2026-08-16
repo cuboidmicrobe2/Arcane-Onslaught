@@ -316,7 +316,7 @@ void EngineAPI::RunGameFrame()
     GameEcs::DrawPlayersAndHud(m_registry);
 }
 
-void EngineAPI::SetSpellConfig(int projectileCount, float projectileSpeed, float projectileSize, bool ricochet, int damage, float colorR, float colorG, float colorB)
+void EngineAPI::SetSpellConfig(int projectileCount, float projectileSpeed, float projectileSize, bool ricochet, int damage, float colorR, float colorG, float colorB, float staggerDelay)
 {
     GameEcs::SpellTuning tuning{};
     tuning.projectileCount = projectileCount;
@@ -324,6 +324,7 @@ void EngineAPI::SetSpellConfig(int projectileCount, float projectileSpeed, float
     tuning.projectileSize = projectileSize;
     tuning.ricochet = ricochet;
     tuning.damage = damage;
+    tuning.staggerDelay = std::max(0.0f, staggerDelay);
     tuning.projectileColor = Color{
         static_cast<unsigned char>(colorR * 255.0f),
         static_cast<unsigned char>(colorG * 255.0f),
@@ -574,6 +575,11 @@ void EngineAPI::GetEntityData(lua_State *L, uint32_t entityId)
     }
 
     // Tags
+    if (m_registry.all_of<GameEcs::SpellTag>(entity))
+    {
+        lua_pushboolean(L, 1);
+        lua_setfield(L, tableIndex, "spell_tag");
+    }
     if (m_registry.all_of<GameEcs::PlayerTag>(entity))
     {
         lua_pushboolean(L, 1);
@@ -608,6 +614,20 @@ void EngineAPI::GetEntityData(lua_State *L, uint32_t entityId)
         lua_pushinteger(L, ricochet.bouncesLeft);
         lua_setfield(L, -2, "bounces_left");
         lua_setfield(L, tableIndex, "projectile_ricochet");
+    }
+
+    // ProjectileColor
+    if (m_registry.all_of<GameEcs::ProjectileColor>(entity))
+    {
+        const auto &color = m_registry.get<GameEcs::ProjectileColor>(entity).value;
+        lua_newtable(L);
+        lua_pushnumber(L, static_cast<double>(color.r) / 255.0);
+        lua_setfield(L, -2, "r");
+        lua_pushnumber(L, static_cast<double>(color.g) / 255.0);
+        lua_setfield(L, -2, "g");
+        lua_pushnumber(L, static_cast<double>(color.b) / 255.0);
+        lua_setfield(L, -2, "b");
+        lua_setfield(L, tableIndex, "projectile_color");
     }
 }
 
@@ -721,6 +741,17 @@ bool EngineAPI::UpdateEntityData(lua_State *L, uint32_t entityId)
     lua_pop(L, 1);
 
     // Tags (these are added/removed as needed)
+    bool hasSpellTag = false;
+    lua_getfield(L, tableIndex, "spell_tag");
+    if (lua_toboolean(L, -1))
+        hasSpellTag = true;
+    lua_pop(L, 1);
+
+    if (hasSpellTag && !m_registry.all_of<GameEcs::SpellTag>(entity))
+        m_registry.emplace<GameEcs::SpellTag>(entity);
+    else if (!hasSpellTag && m_registry.all_of<GameEcs::SpellTag>(entity))
+        m_registry.remove<GameEcs::SpellTag>(entity);
+
     bool hasPlayerTag = false;
     lua_getfield(L, tableIndex, "player_tag");
     if (lua_toboolean(L, -1))
@@ -784,6 +815,39 @@ bool EngineAPI::UpdateEntityData(lua_State *L, uint32_t entityId)
                                                               { pr.bouncesLeft = bounces; });
             else
                 m_registry.emplace<GameEcs::ProjectileRicochet>(entity, bounces);
+        }
+    }
+    lua_pop(L, 1);
+
+    // ProjectileColor
+    if (lua_getfield(L, tableIndex, "projectile_color") != LUA_TNIL)
+    {
+        if (lua_istable(L, -1))
+        {
+            float r = 1.0f, g = 0.82f, b = 0.33f;
+            lua_getfield(L, -1, "r");
+            if (lua_isnumber(L, -1))
+                r = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "g");
+            if (lua_isnumber(L, -1))
+                g = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "b");
+            if (lua_isnumber(L, -1))
+                b = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+
+            Color color{
+                static_cast<unsigned char>(std::clamp(r, 0.0f, 1.0f) * 255.0f),
+                static_cast<unsigned char>(std::clamp(g, 0.0f, 1.0f) * 255.0f),
+                static_cast<unsigned char>(std::clamp(b, 0.0f, 1.0f) * 255.0f),
+                255};
+            if (m_registry.all_of<GameEcs::ProjectileColor>(entity))
+                m_registry.patch<GameEcs::ProjectileColor>(entity, [color](auto &pc)
+                                                           { pc.value = color; });
+            else
+                m_registry.emplace<GameEcs::ProjectileColor>(entity, color);
         }
     }
     lua_pop(L, 1);

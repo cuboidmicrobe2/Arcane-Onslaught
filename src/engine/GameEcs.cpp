@@ -17,6 +17,8 @@ namespace
     struct FireCooldown
     {
         float seconds = 0.0f;
+        int projectilesFired = 0;  // Tracks how many projectiles have been fired in current sequence
+        float staggerTimer = 0.0f; // Accumulates time for staggered firing
     };
 
     constexpr float kMaxPlayerFireRate = 0.14f;
@@ -176,6 +178,10 @@ namespace GameEcs
         lua_pop(L, 1);
 
         bool flag = false;
+        if (ReadBoolField(L, tableIndex, "spell_tag", flag) && flag)
+        {
+            registry.emplace<GameEcs::SpellTag>(entity);
+        }
         if (ReadBoolField(L, tableIndex, "player_tag", flag) && flag)
         {
             registry.emplace<GameEcs::PlayerTag>(entity);
@@ -206,6 +212,22 @@ namespace GameEcs
             {
                 registry.emplace<GameEcs::ProjectileRicochet>(entity, bounces);
             }
+        }
+        lua_pop(L, 1);
+
+        Color projectileColor = Color{255, 210, 86, 255};
+        if (lua_getfield(L, tableIndex, "projectile_color") == LUA_TTABLE)
+        {
+            float r = 1.0f, g = 0.82f, b = 0.33f;
+            ReadFloatField(L, -1, "r", r);
+            ReadFloatField(L, -1, "g", g);
+            ReadFloatField(L, -1, "b", b);
+            projectileColor = Color{
+                static_cast<unsigned char>(std::clamp(r, 0.0f, 1.0f) * 255.0f),
+                static_cast<unsigned char>(std::clamp(g, 0.0f, 1.0f) * 255.0f),
+                static_cast<unsigned char>(std::clamp(b, 0.0f, 1.0f) * 255.0f),
+                255};
+            registry.emplace<GameEcs::ProjectileColor>(entity, projectileColor);
         }
         lua_pop(L, 1);
 
@@ -425,6 +447,54 @@ namespace GameEcs
         cooldown.seconds = std::max(0.0f, cooldown.seconds - frame.dt);
 
         const bool firePressed = IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE);
+
+        // If stagger delay is active and we're already firing a sequence, continue the sequence
+        if (tuning.staggerDelay > 0.0f && cooldown.projectilesFired > 0)
+        {
+            cooldown.staggerTimer += frame.dt;
+            if (cooldown.staggerTimer >= tuning.staggerDelay && cooldown.projectilesFired < tuning.projectileCount)
+            {
+                auto players = registry.view<PlayerTag, Position, CircleCollider>();
+                for (auto player : players)
+                {
+                    const auto &playerPos = players.get<Position>(player);
+                    const auto &playerCol = players.get<CircleCollider>(player);
+
+                    Vector2 target = GetMousePosition();
+                    Vector2 toTarget = Vector2{target.x - playerPos.value.x, target.y - playerPos.value.y};
+                    Vector2 forward = NormalizeOrFallback(toTarget, Vector2{0.0f, -1.0f});
+
+                    const int count = std::clamp(tuning.projectileCount, 1, 12);
+                    const float totalSpread = kDefaultSpreadRadians + (0.02f * static_cast<float>(count - 1));
+                    const float startAngle = -totalSpread * 0.5f;
+                    const float step = (count > 1) ? (totalSpread / static_cast<float>(count - 1)) : 0.0f;
+
+                    // Spawn only the next projectile in the sequence
+                    const int i = cooldown.projectilesFired;
+                    const float angle = startAngle + (step * static_cast<float>(i));
+                    Vector2 dir = RotateVector(forward, angle);
+                    Vector2 spawnPos = Vector2{
+                        playerPos.value.x + (dir.x * (playerCol.radius + tuning.projectileSize + 2.0f)),
+                        playerPos.value.y + (dir.y * (playerCol.radius + tuning.projectileSize + 2.0f))};
+                    SpawnProjectileEntity(registry, spawnPos, dir, tuning);
+
+                    cooldown.projectilesFired++;
+                    cooldown.staggerTimer = 0.0f;
+                    break;
+                }
+            }
+
+            // If all projectiles fired, reset for next fire event
+            if (cooldown.projectilesFired >= tuning.projectileCount)
+            {
+                cooldown.seconds = kMaxPlayerFireRate * static_cast<float>(tuning.projectileCount);
+                cooldown.projectilesFired = 0;
+                cooldown.staggerTimer = 0.0f;
+            }
+            return;
+        }
+
+        // Normal (non-staggered) firing
         if (!firePressed || cooldown.seconds > 0.0f)
         {
             return;
@@ -445,14 +515,31 @@ namespace GameEcs
             const float startAngle = -totalSpread * 0.5f;
             const float step = (count > 1) ? (totalSpread / static_cast<float>(count - 1)) : 0.0f;
 
-            for (int i = 0; i < count; ++i)
+            if (tuning.staggerDelay > 0.0f)
             {
-                const float angle = startAngle + (step * static_cast<float>(i));
+                // Start staggered sequence: fire first projectile
+                const float angle = startAngle;
                 Vector2 dir = RotateVector(forward, angle);
                 Vector2 spawnPos = Vector2{
                     playerPos.value.x + (dir.x * (playerCol.radius + tuning.projectileSize + 2.0f)),
                     playerPos.value.y + (dir.y * (playerCol.radius + tuning.projectileSize + 2.0f))};
                 SpawnProjectileEntity(registry, spawnPos, dir, tuning);
+
+                cooldown.projectilesFired = 1;
+                cooldown.staggerTimer = 0.0f;
+            }
+            else
+            {
+                // Spawn all projectiles at once (no stagger)
+                for (int i = 0; i < count; ++i)
+                {
+                    const float angle = startAngle + (step * static_cast<float>(i));
+                    Vector2 dir = RotateVector(forward, angle);
+                    Vector2 spawnPos = Vector2{
+                        playerPos.value.x + (dir.x * (playerCol.radius + tuning.projectileSize + 2.0f)),
+                        playerPos.value.y + (dir.y * (playerCol.radius + tuning.projectileSize + 2.0f))};
+                    SpawnProjectileEntity(registry, spawnPos, dir, tuning);
+                }
             }
 
             cooldown.seconds = kMaxPlayerFireRate * static_cast<float>(count);

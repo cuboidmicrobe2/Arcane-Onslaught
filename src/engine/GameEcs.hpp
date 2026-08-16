@@ -22,6 +22,7 @@ namespace GameEcs
         float projectileSize = 10.0f;
         bool ricochet = false;
         int damage = 18;
+        float staggerDelay = 0.0f;
         Color projectileColor = Color{255, 210, 86, 255}; // Default golden yellow
     };
 
@@ -76,6 +77,10 @@ namespace GameEcs
     struct IFrames
     {
         float seconds = 0.0f; // Duration of invincibility frames remaining
+    };
+
+    struct SpellTag
+    {
     };
 
     struct ProjectileTag

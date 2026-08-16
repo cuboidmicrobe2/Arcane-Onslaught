@@ -20,7 +20,8 @@ function update_game()
         spell.damage,
         spell.color.r,
         spell.color.g,
-        spell.color.b
+        spell.color.b,
+        spell.stagger_delay
     )
 
     -- Start first wave on first frame

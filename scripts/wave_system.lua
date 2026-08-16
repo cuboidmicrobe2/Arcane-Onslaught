@@ -18,47 +18,115 @@ local wave_state = {
     spawn_timer = 0.0,
     paused = false,
     game_won = false,
-    player_pos = ECS.vec2(0, 0),  -- Will be set in init
-    endless_mode = false
+    player_pos = ECS.vec2(0, 0),
+    endless_mode = false,
+    wave_sequence = nil,
+    should_advance_wave = false  -- Flag to advance on next update
 }
+
+local function get_wave_config()
+    local current_wave = WAVES[wave_state.current_wave]
+    if current_wave then
+        return current_wave
+    end
+
+    if wave_state.endless_mode then
+        local wave_num = wave_state.current_wave
+        return {
+            enemy_count = 3 + (wave_num - 1) * 2,
+            spawn_interval = math.max(0.2, 0.6 - (wave_num - 5) * 0.05)
+        }
+    end
+
+    return nil
+end
 
 -- Enemy spawn patterns - spawn at edges and move towards player
 local function get_enemy_spawn_pattern(index, wave_num, player_pos)
     local screen_width = engine.screen_width()
     local screen_height = engine.screen_height()
     local pattern = index % 4
-    local base_speed = 150.0 + (wave_num * 20.0)  -- Increase speed with waves
+    local base_speed = 150.0 + (wave_num * 20.0)
     local radius = 14.0 + wave_num
-    
-    -- Spawn positions at screen edges
+
     local spawn_positions = {
-        { x = screen_width * 0.1, y = 0 },           -- Top left
-        { x = screen_width * 0.9, y = 0 },           -- Top right
-        { x = 0, y = screen_height * 0.3 },          -- Left side
-        { x = screen_width, y = screen_height * 0.3 }, -- Right side
+        { x = screen_width * 0.1, y = 0 },
+        { x = screen_width * 0.9, y = 0 },
+        { x = 0, y = screen_height * 0.3 },
+        { x = screen_width, y = screen_height * 0.3 },
     }
-    
+
     local spawn = spawn_positions[pattern + 1]
     local spawn_pos = ECS.vec2(spawn.x, spawn.y)
-    
-    -- Calculate direction towards player
+
     local dx = player_pos.x - spawn.x
     local dy = player_pos.y - spawn.y
     local dist = math.sqrt(dx * dx + dy * dy)
-    
-    -- Normalize and scale velocity
+
     local vel_x = 0
     local vel_y = 0
     if dist > 0 then
         vel_x = (dx / dist) * base_speed
         vel_y = (dy / dist) * base_speed
     end
-    
-    return { 
-        pos = spawn_pos, 
-        vel = ECS.vec2(vel_x, vel_y), 
-        radius = radius 
+
+    return {
+        pos = spawn_pos,
+        vel = ECS.vec2(vel_x, vel_y),
+        radius = radius
     }
+end
+
+local function spawn_enemy_for_index(index)
+    local enemy_data = get_enemy_spawn_pattern(index, wave_state.current_wave, wave_state.player_pos)
+    local enemy_entity = ECS.enemy(enemy_data.pos, ECS.vec2(0, 0), enemy_data.radius)
+
+    local health_multiplier = 1.0 + (wave_state.current_wave * 0.1)
+    enemy_entity.health.hp = math.max(1, math.floor(enemy_entity.health.hp * health_multiplier + 0.5))
+
+    local entity_id = engine.spawn_entity(enemy_entity)
+    engine.attach_behavior(entity_id, ECS.enemy_entrance(entity_id, enemy_data.vel, 10.0))
+    wave_state.enemies_spawned = wave_state.enemies_spawned + 1
+    wave_state.last_enemy_count = engine.count_enemies()
+end
+
+local function create_wave_sequence()
+    return coroutine.create(function()
+        local config = get_wave_config()
+        if not config then
+            wave_state.wave_active = false
+            wave_state.game_won = true
+            wave_state.wave_sequence = nil
+            return
+        end
+
+        for i = 1, config.enemy_count do
+            local elapsed = 0.0
+            local delay = config.spawn_interval
+            while elapsed < delay do
+                elapsed = elapsed + engine.delta_time()
+                engine.coroutine_yield_frame()
+            end
+
+            spawn_enemy_for_index(i - 1)
+        end
+
+        while engine.count_enemies() > 0 do
+            wave_state.last_enemy_count = engine.count_enemies()
+            engine.coroutine_yield_frame()
+        end
+
+        wave_state.last_enemy_count = 0
+        wave_state.wave_sequence = nil
+
+        -- Set flag to advance wave on next update (don't call next_wave from within coroutine)
+        if wave_state.endless_mode or wave_state.current_wave < #WAVES then
+            wave_state.should_advance_wave = true
+        else
+            wave_state.wave_active = false
+            wave_state.game_won = true
+        end
+    end)
 end
 
 function WaveSystem.init()
@@ -69,96 +137,73 @@ function WaveSystem.init()
     wave_state.paused = false
     wave_state.last_enemy_count = 0
     wave_state.game_won = false
-    
-    -- Set player position (must match game_scene.lua spawn position)
+    wave_state.wave_sequence = nil
+    wave_state.should_advance_wave = false
+
     wave_state.player_pos = ECS.vec2(engine.screen_width() * 0.5, engine.screen_height() * 0.72)
 end
 
 function WaveSystem.start_wave()
-    if not wave_state.wave_active then
-        wave_state.wave_active = true
-        wave_state.enemies_spawned = 0
-        wave_state.spawn_timer = 0.0
-        wave_state.paused = false
+    if wave_state.wave_sequence ~= nil or wave_state.game_won then
+        return
     end
+
+    wave_state.wave_active = true
+    wave_state.enemies_spawned = 0
+    wave_state.spawn_timer = 0.0
+    wave_state.paused = false
+    wave_state.wave_sequence = create_wave_sequence()
 end
 
 function WaveSystem.update(delta_time)
-    if not wave_state.wave_active or wave_state.paused then
+    if wave_state.paused then
         return
     end
-    
-    -- Get current wave config or generate one for endless mode
-    local current_wave = WAVES[wave_state.current_wave]
-    if not current_wave then
-        if wave_state.endless_mode then
-            -- Generate endless waves with increasing difficulty
-            local wave_num = wave_state.current_wave
-            current_wave = {
-                enemy_count = 3 + (wave_num - 1) * 2,  -- +2 enemies per wave
-                spawn_interval = math.max(0.2, 0.6 - (wave_num - 5) * 0.05)  -- Faster spawns
-            }
-        else
-            -- Non-endless: all waves defeated
-            return
-        end
+
+    -- Check if we should advance to next wave (set by coroutine when it completes)
+    if wave_state.should_advance_wave then
+        wave_state.should_advance_wave = false
+        WaveSystem.next_wave()
     end
-    
-    -- Spawn enemies at intervals
-    wave_state.spawn_timer = wave_state.spawn_timer + delta_time
-    
-    if wave_state.spawn_timer >= current_wave.spawn_interval and 
-       wave_state.enemies_spawned < current_wave.enemy_count then
-        
-        local enemy_data = get_enemy_spawn_pattern(wave_state.enemies_spawned, wave_state.current_wave, wave_state.player_pos)
-        
-        -- Create enemy entity from Lua table and spawn it via engine
-        local enemy_entity = ECS.enemy(enemy_data.pos, ECS.vec2(0, 0), enemy_data.radius)  -- Start with zero velocity
-        
-        -- Scale health by wave number: 1.1, 1.2, 1.3, etc.
-        local health_multiplier = 1.0 + (wave_state.current_wave * 0.1)
-        enemy_entity.health.hp = math.max(1, math.floor(enemy_entity.health.hp * health_multiplier + 0.5))
-        
-        -- Spawn and attach entrance behavior
-        local entity_id = engine.spawn_entity(enemy_entity)
-        engine.attach_behavior(entity_id, ECS.enemy_entrance(entity_id, enemy_data.vel, 10.0))
-        
-        wave_state.enemies_spawned = wave_state.enemies_spawned + 1
-        wave_state.spawn_timer = 0.0
+
+    if wave_state.wave_active and wave_state.wave_sequence == nil then
+        WaveSystem.start_wave()
     end
-    
-    -- Check if all enemies for this wave are spawned and defeated
-    if wave_state.enemies_spawned >= current_wave.enemy_count then
-        -- Only check enemy count after all enemies are spawned
-        -- Cache the count to avoid multiple registry accesses in the same frame
-        wave_state.last_enemy_count = engine.count_enemies()
-        
-        if wave_state.last_enemy_count == 0 then
-            WaveSystem.next_wave()
-        end
-    else
-        -- While still spawning, update the enemy count
-        wave_state.last_enemy_count = engine.count_enemies()
+
+    if not wave_state.wave_active or wave_state.wave_sequence == nil then
+        return
     end
+
+    local ok, err = coroutine.resume(wave_state.wave_sequence)
+    if not ok then
+        print("Wave coroutine error: " .. tostring(err))
+        wave_state.wave_sequence = nil
+        wave_state.wave_active = false
+        return
+    end
+
+    if wave_state.wave_sequence ~= nil and coroutine.status(wave_state.wave_sequence) == "dead" then
+        wave_state.wave_sequence = nil
+    end
+
+    wave_state.last_enemy_count = engine.count_enemies()
 end
 
 function WaveSystem.next_wave()
     if wave_state.current_wave < #WAVES then
         wave_state.current_wave = wave_state.current_wave + 1
-        wave_state.enemies_spawned = 0
-        wave_state.spawn_timer = 0.0
-        wave_state.wave_active = true
     elseif wave_state.endless_mode then
-        -- Endless mode: continue to next generated wave
         wave_state.current_wave = wave_state.current_wave + 1
-        wave_state.enemies_spawned = 0
-        wave_state.spawn_timer = 0.0
-        wave_state.wave_active = true
     else
-        -- All waves completed (non-endless)
         wave_state.wave_active = false
         wave_state.game_won = true
+        return
     end
+
+    wave_state.enemies_spawned = 0
+    wave_state.spawn_timer = 0.0
+    wave_state.wave_active = true
+    wave_state.wave_sequence = nil
 end
 
 function WaveSystem.get_current_wave()
@@ -182,9 +227,9 @@ function WaveSystem.resume_wave()
 end
 
 function WaveSystem.get_state()
-    local current_wave = WAVES[wave_state.current_wave]
+    local current_wave = get_wave_config()
     local total_enemies = current_wave and current_wave.enemy_count or 0
-    
+
     return {
         current_wave = wave_state.current_wave,
         wave_active = wave_state.wave_active,

@@ -160,7 +160,14 @@ inline int lua_set_spell_config(lua_State *L)
         b = static_cast<float>(luaL_checknumber(L, 8));
     }
 
-    api->SetSpellConfig(projectileCount, projectileSpeed, projectileSize, ricochet, damage, r, g, b);
+    // Stagger delay (optional, default to 0.0 if not provided)
+    float staggerDelay = 0.0f;
+    if (lua_isnumber(L, 9))
+    {
+        staggerDelay = static_cast<float>(luaL_checknumber(L, 9));
+    }
+
+    api->SetSpellConfig(projectileCount, projectileSpeed, projectileSize, ricochet, damage, r, g, b, staggerDelay);
     return 0;
 }
 

@@ -137,7 +137,8 @@ public:
     /// @param colorR Red component (0.0-1.0).
     /// @param colorG Green component (0.0-1.0).
     /// @param colorB Blue component (0.0-1.0).
-    void SetSpellConfig(int projectileCount, float projectileSpeed, float projectileSize, bool ricochet, int damage, float colorR = 1.0f, float colorG = 0.82f, float colorB = 0.33f);
+    /// @param staggerDelay Delay in seconds between projectile spawns (0 = no stagger).
+    void SetSpellConfig(int projectileCount, float projectileSpeed, float projectileSize, bool ricochet, int damage, float colorR = 1.0f, float colorG = 0.82f, float colorB = 0.33f, float staggerDelay = 0.0f);
 
     /// @brief Reports which numeric spell-slot key (1-5) was pressed this frame.
     /// @return Value in [1, 5], or 0 when no slot key was pressed.
